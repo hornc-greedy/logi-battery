@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.logi-battery" path="/org/gnome/shell/extensions/logi-battery/">
+    <key name="display-mode" type="s">
+      <default>"percentage"</default>
+      <summary>Display mode</summary>
+      <description>Either "percentage" (show the number) or "icon" (show a battery icon colored red/yellow/green by charge level).</description>
+    </key>
+  </schema>
+</schemalist>

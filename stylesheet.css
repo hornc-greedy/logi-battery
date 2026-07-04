@@ -1,0 +1,20 @@
+.logi-battery-box {
+    spacing: 6px;
+}
+
+.logi-battery-device {
+    spacing: 2px;
+}
+
+.logi-battery-icon-group {
+    spacing: 0px;
+}
+
+.logi-battery-device .system-status-icon {
+    padding: 0;
+}
+
+.logi-battery-separator {
+    padding: 0 4px;
+    opacity: 0.6;
+}

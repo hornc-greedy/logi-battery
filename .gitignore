@@ -1,0 +1,4 @@
+*.zip
+schemas/gschemas.compiled
+hidraw-log.txt
+node_modules/

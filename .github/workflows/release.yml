@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      UUID: logi-battery@hornc-greedy.github.io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install lint dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Install schema compiler
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin zip
+
+      - name: Build extension zip
+        run: |
+          glib-compile-schemas schemas/
+          zip -r "$UUID.shell-extension.zip" \
+            extension.js utils.js metadata.json stylesheet.css schemas/
+
+      - name: Attach zip to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$UUID.shell-extension.zip" --clobber
+
+      - name: Generate release notes
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+
+      - name: Set release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release edit "$TAG" --notes-file "${{ steps.git-cliff.outputs.changelog }}"

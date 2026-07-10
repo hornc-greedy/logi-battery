@@ -203,6 +203,7 @@ class Indicator extends PanelMenu.Button {
         this._cancellable.cancel();
 
         this._hidppLinks.forEach(link => link.close());
+        this._hidppLinks = [];
         this._hidrawMonitor?.cancel();
 
         this._settings.disconnectObject(this);

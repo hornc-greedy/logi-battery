@@ -49,28 +49,32 @@ class Indicator extends PanelMenu.Button {
         }, this);
         this.connect('destroy', () => this._onDestroy());
 
-        this._connectHidpp();
+        this._connectHidpp().then(() => this._refresh());
         try {
             this._hidrawMonitor = watchHidrawDirectory(() => {
-                if (this._connectHidpp())
-                    this._refresh();
+                this._connectHidpp().then(connected => {
+                    if (connected)
+                        this._refresh();
+                });
             });
         } catch (e) {
             console.error(`logi-battery: watchHidrawDirectory failed: ${e.message}`);
         }
 
         this._setView('loading');
-        this._refresh();
     }
 
-    _connectHidpp() {
+    async _connectHidpp() {
         let interfaces;
         try {
-            interfaces = discoverHidppInterfaces();
+            interfaces = await discoverHidppInterfaces();
         } catch (e) {
             console.error(`logi-battery: discoverHidppInterfaces failed: ${e.message}`);
             return false;
         }
+
+        if (this._destroyed)
+            return false;
 
         const knownPaths = new Set(this._hidppLinks.map(link => link.path));
         let connectedAny = false;

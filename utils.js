@@ -3,6 +3,9 @@ import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async', 'read_bytes_finish');
+Gio._promisify(Gio.File.prototype, 'enumerate_children_async', 'enumerate_children_finish');
+Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
+Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async', 'next_files_finish');
 
 const LOGITECH_VENDOR_ID = '046D';
 
@@ -43,47 +46,51 @@ const DEVICE_KIND_NAMES = [
 // Idle Bluetooth devices in sniff mode need longer to wake for their first reply
 const REQUEST_TIMEOUT_SECONDS = 5;
 
-function tryReadUevent(path) {
+async function tryReadUevent(path) {
     try {
-        return Gio.File.new_for_path(path).load_contents(null)[1];
+        const [contents] = await Gio.File.new_for_path(path).load_contents_async(null);
+        return contents;
     } catch {
         return null;
     }
 }
 
-export function discoverHidppInterfaces() {
+export async function discoverHidppInterfaces() {
     const dir = Gio.File.new_for_path('/sys/class/hidraw');
-    const enumerator = dir.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+    const enumerator = await dir.enumerate_children_async(
+        'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, null);
     const interfaces = [];
 
-    let info;
-    while ((info = enumerator.next_file(null))) {
-        const name = info.get_name();
-        const devicePath = `/sys/class/hidraw/${name}/device`;
+    let infos;
+    while ((infos = await enumerator.next_files_async(10, GLib.PRIORITY_DEFAULT, null)).length) {
+        for (const info of infos) {
+            const name = info.get_name();
+            const devicePath = `/sys/class/hidraw/${name}/device`;
 
-        const contents = tryReadUevent(`${devicePath}/uevent`);
-        if (!contents)
-            continue;
+            const contents = await tryReadUevent(`${devicePath}/uevent`);
+            if (!contents)
+                continue;
 
-        const match = new TextDecoder().decode(contents).match(/HID_ID=([0-9A-Fa-f]+):0000([0-9A-Fa-f]{4}):0000([0-9A-Fa-f]{4})/);
-        if (!match)
-            continue;
+            const match = new TextDecoder().decode(contents).match(/HID_ID=([0-9A-Fa-f]+):0000([0-9A-Fa-f]{4}):0000([0-9A-Fa-f]{4})/);
+            if (!match)
+                continue;
 
-        const [, bus, vendor, product] = match;
-        if (vendor.toUpperCase() !== LOGITECH_VENDOR_ID)
-            continue;
+            const [, bus, vendor, product] = match;
+            if (vendor.toUpperCase() !== LOGITECH_VENDOR_ID)
+                continue;
 
-        const isBluetooth = bus.toUpperCase() === BUS_BLUETOOTH;
+            const isBluetooth = bus.toUpperCase() === BUS_BLUETOOTH;
 
-        // The real USB HID++ interface has no input node, unlike the compat interfaces
-        if (!isBluetooth && GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
-            continue;
+            // The real USB HID++ interface has no input node, unlike the compat interfaces
+            if (!isBluetooth && GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
+                continue;
 
-        const productId = parseInt(product, 16);
-        const isReceiver = bus.toUpperCase() === BUS_USB
-            && productId >= RECEIVER_PRODUCT_ID_MIN && productId <= RECEIVER_PRODUCT_ID_MAX;
+            const productId = parseInt(product, 16);
+            const isReceiver = bus.toUpperCase() === BUS_USB
+                && productId >= RECEIVER_PRODUCT_ID_MIN && productId <= RECEIVER_PRODUCT_ID_MAX;
 
-        interfaces.push({ path: `/dev/${name}`, isReceiver });
+            interfaces.push({ path: `/dev/${name}`, isReceiver });
+        }
     }
 
     return interfaces;

@@ -1,4 +1,5 @@
 import GObject from 'gi://GObject';
+import Gio from 'gi://Gio';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
@@ -34,7 +35,7 @@ class Indicator extends PanelMenu.Button {
         super(0.5, extension.metadata.name);
 
         this._settings = extension.getSettings();
-        this._destroyed = false;
+        this._cancellable = new Gio.Cancellable();
         this._view = null;
         this._hidppLinks = [];
 
@@ -67,13 +68,14 @@ class Indicator extends PanelMenu.Button {
     async _connectHidpp() {
         let interfaces;
         try {
-            interfaces = await discoverHidppInterfaces();
+            interfaces = await discoverHidppInterfaces(this._cancellable);
         } catch (e) {
-            console.error(`logi-battery: discoverHidppInterfaces failed: ${e.message}`);
+            if (!this._cancellable.is_cancelled())
+                console.error(`logi-battery: discoverHidppInterfaces failed: ${e.message}`);
             return false;
         }
 
-        if (this._destroyed)
+        if (this._cancellable.is_cancelled())
             return false;
 
         const knownPaths = new Set(this._hidppLinks.map(link => link.path));
@@ -113,7 +115,7 @@ class Indicator extends PanelMenu.Button {
     }
 
     _render() {
-        if (this._destroyed)
+        if (this._cancellable.is_cancelled())
             return;
         const devices = this._getAllDevices();
         this._setView(devices.length ? 'devices' : 'nodevices', devices);
@@ -194,9 +196,9 @@ class Indicator extends PanelMenu.Button {
     }
 
     _onDestroy() {
-        if (this._destroyed)
+        if (this._cancellable.is_cancelled())
             return;
-        this._destroyed = true;
+        this._cancellable.cancel();
 
         this._hidppLinks.forEach(link => link.close());
         this._hidrawMonitor?.cancel();

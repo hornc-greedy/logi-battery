@@ -38,6 +38,7 @@ class Indicator extends PanelMenu.Button {
         this._cancellable = new Gio.Cancellable();
         this._view = null;
         this._hidppLinks = [];
+        this._hidrawMonitor = { cancel() {} };
 
         this._box = new St.BoxLayout({ style_class: 'logi-battery-box' });
         this.add_child(this._box);
@@ -201,7 +202,7 @@ class Indicator extends PanelMenu.Button {
 
         this._hidppLinks.forEach(link => link.close());
         this._hidppLinks = [];
-        this._hidrawMonitor?.cancel();
+        this._hidrawMonitor.cancel();
 
         this._settings.disconnectObject(this);
         this._displaySwitch.disconnectObject(this);

@@ -197,8 +197,6 @@ class Indicator extends PanelMenu.Button {
     }
 
     _onDestroy() {
-        if (this._cancellable.is_cancelled())
-            return;
         this._cancellable.cancel();
 
         this._hidppLinks.forEach(link => link.close());

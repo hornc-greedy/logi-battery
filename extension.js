@@ -49,7 +49,6 @@ class Indicator extends PanelMenu.Button {
             if (this._view === 'devices')
                 this._renderDevices(this._getAllDevices());
         }, this);
-        this.connect('destroy', () => this._onDestroy());
 
         this._connectHidpp().then(() => this._refresh());
         try {
@@ -197,7 +196,7 @@ class Indicator extends PanelMenu.Button {
         this._box.add_child(new St.Label({ text, y_align: Clutter.ActorAlign.CENTER }));
     }
 
-    _onDestroy() {
+    destroy() {
         this._cancellable.cancel();
 
         this._hidppLinks.forEach(link => link.close());
@@ -206,6 +205,8 @@ class Indicator extends PanelMenu.Button {
 
         this._settings.disconnectObject(this);
         this._displaySwitch.disconnectObject(this);
+
+        super.destroy();
     }
 }
 

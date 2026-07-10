@@ -162,8 +162,8 @@ export class HidppLink {
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
-        this.onChange = null;
-        this.onDisconnect = null;
+        this.onChange = () => {};
+        this.onDisconnect = () => {};
 
         this._readLoop();
     }
@@ -192,8 +192,8 @@ export class HidppLink {
             } catch {
                 if (!this._cancellable.is_cancelled()) {
                     this._devices.clear();
-                    this.onChange?.();
-                    this.onDisconnect?.();
+                    this.onChange();
+                    this.onDisconnect();
                 }
                 return;
             }
@@ -230,7 +230,7 @@ export class HidppLink {
         device.percent = data[4];
         device.charging = isCharging(data[6]);
 
-        this.onChange?.();
+        this.onChange();
     }
 
     _request(devnumber, requestId, params = [], long = false) {
@@ -378,7 +378,7 @@ export class HidppLink {
             this._refreshing = false;
         }
 
-        this.onChange?.();
+        this.onChange();
 
         if (this._refreshPending) {
             this._refreshPending = false;

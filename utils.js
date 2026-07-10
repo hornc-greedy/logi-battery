@@ -46,28 +46,28 @@ const DEVICE_KIND_NAMES = [
 // Idle Bluetooth devices in sniff mode need longer to wake for their first reply
 const REQUEST_TIMEOUT_SECONDS = 5;
 
-async function tryReadUevent(path) {
+async function tryReadUevent(path, cancellable) {
     try {
-        const [contents] = await Gio.File.new_for_path(path).load_contents_async(null);
+        const [contents] = await Gio.File.new_for_path(path).load_contents_async(cancellable);
         return contents;
     } catch {
         return null;
     }
 }
 
-export async function discoverHidppInterfaces() {
+export async function discoverHidppInterfaces(cancellable = null) {
     const dir = Gio.File.new_for_path('/sys/class/hidraw');
     const enumerator = await dir.enumerate_children_async(
-        'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, null);
+        'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, cancellable);
     const interfaces = [];
 
     let infos;
-    while ((infos = await enumerator.next_files_async(10, GLib.PRIORITY_DEFAULT, null)).length) {
+    while ((infos = await enumerator.next_files_async(10, GLib.PRIORITY_DEFAULT, cancellable)).length) {
         for (const info of infos) {
             const name = info.get_name();
             const devicePath = `/sys/class/hidraw/${name}/device`;
 
-            const contents = await tryReadUevent(`${devicePath}/uevent`);
+            const contents = await tryReadUevent(`${devicePath}/uevent`, cancellable);
             if (!contents)
                 continue;
 

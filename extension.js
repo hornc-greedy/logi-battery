@@ -104,6 +104,8 @@ class Indicator extends PanelMenu.Button {
     }
 
     async _refresh() {
+        if (this._cancellable.is_cancelled())
+            return;
         if (this._hidppLinks.length)
             await Promise.all(this._hidppLinks.map(link => link.refreshDevices()));
         else

@@ -343,7 +343,8 @@ export class HidppLink {
             const isBluetooth = !this._isReceiver;
             this._devices.set(devnumber, { name, kind, batteryFeatureIndex, percent, charging, isBluetooth });
         } catch (e) {
-            console.error(`logi-battery: ${this.path} devnumber 0x${devnumber.toString(16)} unresponsive: ${e.message}`);
+            if (!this._cancellable.is_cancelled())
+                console.error(`logi-battery: ${this.path} devnumber 0x${devnumber.toString(16)} unresponsive: ${e.message}`);
             this._devices.delete(devnumber);
         }
     }
@@ -371,7 +372,8 @@ export class HidppLink {
                     await this._refreshDevice(devnumber);
             }
         } catch (e) {
-            console.error(`logi-battery: refreshDevices on ${this.path} failed: ${e.message}`);
+            if (!this._cancellable.is_cancelled())
+                console.error(`logi-battery: refreshDevices on ${this.path} failed: ${e.message}`);
         } finally {
             this._refreshing = false;
         }

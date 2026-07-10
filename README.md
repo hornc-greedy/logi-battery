@@ -1,5 +1,8 @@
 # Logi Battery Indicator
 
+[![Release](https://img.shields.io/github/v/release/hornc-greedy/logi-battery)](https://github.com/hornc-greedy/logi-battery/releases)
+[![License](https://img.shields.io/github/license/hornc-greedy/logi-battery)](LICENSE)
+
 A GNOME Shell extension that shows battery percentage and charging status in
 the top bar for input devices such as the Logitech MX Master and MX Keys
 

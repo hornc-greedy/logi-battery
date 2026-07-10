@@ -34,7 +34,8 @@ jobs:
         run: |
           glib-compile-schemas schemas/
           zip -r "$UUID.shell-extension.zip" \
-            extension.js utils.js metadata.json stylesheet.css schemas/
+            extension.js utils.js metadata.json stylesheet.css schemas/ \
+            -x schemas/gschemas.compiled
 
       - name: Attach zip to release
         env:

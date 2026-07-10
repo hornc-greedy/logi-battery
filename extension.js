@@ -91,7 +91,6 @@ class Indicator extends PanelMenu.Button {
 
             link.onChange = () => this._render();
             link.onDisconnect = () => {
-                console.error(`logi-battery: link to ${path} disconnected`);
                 link.close();
                 this._hidppLinks = this._hidppLinks.filter(l => l !== link);
                 this._render();

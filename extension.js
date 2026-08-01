@@ -38,7 +38,6 @@ class Indicator extends PanelMenu.Button {
         this._cancellable = new Gio.Cancellable();
         this._view = null;
         this._hidppLinks = [];
-        this._hidrawMonitor = { cancel() {} };
 
         this._box = new St.BoxLayout({ style_class: 'logi-battery-box' });
         this.add_child(this._box);
@@ -51,16 +50,12 @@ class Indicator extends PanelMenu.Button {
         }, this);
 
         this._connectHidpp().then(() => this._refresh());
-        try {
-            this._hidrawMonitor = watchHidrawDirectory(() => {
-                this._connectHidpp().then(connected => {
-                    if (connected)
-                        this._refresh();
-                });
+        this._hidrawMonitor = watchHidrawDirectory(() => {
+            this._connectHidpp().then(connected => {
+                if (connected)
+                    this._refresh();
             });
-        } catch (e) {
-            console.error(`logi-battery: watchHidrawDirectory failed: ${e.message}`);
-        }
+        });
 
         this._setView('loading');
     }

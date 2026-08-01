@@ -177,6 +177,7 @@ export class HidppLink {
             waiter.reject(new Error('HID++ link closed'));
         });
         this._waiters = [];
+        this._devices.clear();
     }
 
     getDevices() {
@@ -191,8 +192,7 @@ export class HidppLink {
                 bytes = await this._input.read_bytes_async(32, GLib.PRIORITY_DEFAULT, this._cancellable);
             } catch {
                 if (!this._cancellable.is_cancelled()) {
-                    this._devices.clear();
-                    this.onChange();
+                    this.close();
                     this.onDisconnect();
                 }
                 return;

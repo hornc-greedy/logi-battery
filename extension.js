@@ -86,7 +86,6 @@ class Indicator extends PanelMenu.Button {
 
             link.onChange = () => this._render();
             link.onDisconnect = () => {
-                link.close();
                 this._hidppLinks = this._hidppLinks.filter(l => l !== link);
                 this._render();
             };

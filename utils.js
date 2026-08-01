@@ -202,7 +202,7 @@ export class HidppLink {
 
             // No receiver: any traffic before a device resolves means it just woke up
             if (isConnectionNotification(data) || (!this._isReceiver && !this._devices.size))
-                this.refreshDevices().catch(() => {});
+                this.refreshDevices();
 
             this._handleBatteryEvent(data);
 

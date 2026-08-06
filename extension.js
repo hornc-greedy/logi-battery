@@ -9,10 +9,8 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
-import {
-    discoverHidppInterfaces, watchHidrawDirectory, HidppLink,
-    deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor,
-} from './utils.js';
+import { discoverHidppInterfaces, watchHidrawDirectory, HidppLink } from './hidpp.js';
+import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
 
 function makeStatusIcon(iconName) {
     return new St.Icon({ icon_name: iconName, style_class: 'system-status-icon' });

@@ -151,8 +151,7 @@ export class HidppLink {
     }
 
     getDevices() {
-        return Array.from(this._devices.values())
-            .map(({ name, kind, percent, charging, isBluetooth }) => ({ name, kind, percent, charging, isBluetooth }));
+        return Array.from(this._devices.values(), ({ kind, percent, charging, isBluetooth }) => ({ kind, percent, charging, isBluetooth }));
     }
 
     async _readLoop() {
@@ -276,20 +275,6 @@ export class HidppLink {
         return DEVICE_KIND_NAMES[reply[4]] || 'other';
     }
 
-    async _getDeviceName(devnumber, featureIndex) {
-        const lengthReply = await this._callFeature(devnumber, featureIndex, 0, []);
-        const nameLength = lengthReply[4];
-
-        const bytes = [];
-        while (bytes.length < nameLength) {
-            const reply = await this._callFeature(devnumber, featureIndex, 1, [bytes.length], true);
-            const remaining = nameLength - bytes.length;
-            for (let i = 0; i < Math.min(16, remaining); i++)
-                bytes.push(reply[4 + i]);
-        }
-        return new TextDecoder().decode(new Uint8Array(bytes));
-    }
-
     async _refreshDevice(devnumber) {
         try {
             const batteryFeatureIndex = await this._getFeatureIndex(devnumber, FEATURE_UNIFIED_BATTERY);
@@ -302,16 +287,10 @@ export class HidppLink {
                 this._getFeatureIndex(devnumber, FEATURE_DEVICE_NAME),
                 this._getBatteryStatus(devnumber, batteryFeatureIndex),
             ]);
-            const [name, kind] = nameFeatureIndex
-                ? await Promise.all([
-                    this._getDeviceName(devnumber, nameFeatureIndex),
-                    this._getDeviceKind(devnumber, nameFeatureIndex),
-                ])
-                : ['Unknown device', 'other'];
-            const charging = isCharging(statusByte);
+            const kind = nameFeatureIndex ? await this._getDeviceKind(devnumber, nameFeatureIndex) : 'other';
 
             const isBluetooth = !this._isReceiver;
-            this._devices.set(devnumber, { name, kind, batteryFeatureIndex, percent, charging, isBluetooth });
+            this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte), isBluetooth });
         } catch (e) {
             if (!this._cancellable.is_cancelled())
                 console.error(`logi-battery: ${this.path} devnumber 0x${devnumber.toString(16)} unresponsive: ${e.message}`);

@@ -1,6 +1,7 @@
 import Gio from 'gi://Gio';
 import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async', 'read_bytes_finish');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async', 'enumerate_children_finish');
@@ -119,8 +120,19 @@ function isCharging(statusByte) {
 }
 
 // HID++ devices push battery and status events unsolicited
-export class HidppLink {
+export class HidppLink extends GObject.Object {
+    static [GObject.signals] = {
+        'changed': {},
+        'disconnected': {},
+    };
+
+    static {
+        GObject.registerClass(this);
+    }
+
     constructor(path, { isReceiver }) {
+        super();
+
         const ioStream = Gio.File.new_for_path(path).open_readwrite(null);
         const fd = ioStream.get_input_stream().get_fd();
 
@@ -132,8 +144,6 @@ export class HidppLink {
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
-        this.onChange = () => {};
-        this.onDisconnect = () => {};
 
         this._readLoop();
     }
@@ -162,7 +172,7 @@ export class HidppLink {
             } catch {
                 if (!this._cancellable.is_cancelled()) {
                     this.close();
-                    this.onDisconnect();
+                    this.emit('disconnected');
                 }
                 return;
             }
@@ -199,7 +209,7 @@ export class HidppLink {
         device.percent = data[4];
         device.charging = isCharging(data[6]);
 
-        this.onChange();
+        this.emit('changed');
     }
 
     _request(devnumber, requestId, params = [], long = false) {
@@ -327,7 +337,7 @@ export class HidppLink {
             this._refreshing = false;
         }
 
-        this.onChange();
+        this.emit('changed');
 
         if (this._refreshPending) {
             this._refreshPending = false;

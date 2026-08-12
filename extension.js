@@ -82,11 +82,14 @@ class Indicator extends PanelMenu.Button {
             if (!link)
                 continue;
 
-            link.onChange = () => this._render();
-            link.onDisconnect = () => {
-                this._hidppLinks = this._hidppLinks.filter(l => l !== link);
-                this._render();
-            };
+            link.connectObject(
+                'changed', () => this._render(),
+                'disconnected', () => {
+                    link.disconnectObject(this);
+                    this._hidppLinks = this._hidppLinks.filter(l => l !== link);
+                    this._render();
+                },
+                this);
             this._hidppLinks.push(link);
             connectedAny = true;
         }
@@ -191,7 +194,10 @@ class Indicator extends PanelMenu.Button {
     destroy() {
         this._cancellable.cancel();
 
-        this._hidppLinks.forEach(link => link.close());
+        this._hidppLinks.forEach(link => {
+            link.disconnectObject(this);
+            link.close();
+        });
         this._hidppLinks = [];
         this._hidrawMonitor.cancel();
 

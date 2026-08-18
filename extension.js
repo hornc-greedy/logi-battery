@@ -10,7 +10,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
 import { discoverHidppInterfaces, watchHidrawDirectory, HidppLink } from './hidpp.js';
-import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
+import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor, logUnlessCancelled } from './utils.js';
 
 function makeStatusIcon(iconName) {
     return new St.Icon({ icon_name: iconName, style_class: 'system-status-icon' });
@@ -63,8 +63,7 @@ class Indicator extends PanelMenu.Button {
         try {
             interfaces = await discoverHidppInterfaces(this._cancellable);
         } catch (e) {
-            if (!this._cancellable.is_cancelled())
-                console.error(`logi-battery: discoverHidppInterfaces failed: ${e.message}`);
+            logUnlessCancelled(e, 'discoverHidppInterfaces failed');
             return false;
         }
 

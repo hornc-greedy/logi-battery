@@ -3,6 +3,8 @@ import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
+import { logUnlessCancelled } from './utils.js';
+
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async', 'read_bytes_finish');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async', 'enumerate_children_finish');
 Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
@@ -154,10 +156,11 @@ export class HidppLink extends GObject.Object {
 
         this._waiters.forEach(waiter => {
             GLib.Source.remove(waiter.timeoutId);
-            waiter.reject(new Error('HID++ link closed'));
+            waiter.reject(new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed' }));
         });
         this._waiters = [];
         this._devices.clear();
+        this._refreshPending = false;
     }
 
     getDevices() {
@@ -169,8 +172,8 @@ export class HidppLink extends GObject.Object {
             let bytes;
             try {
                 bytes = await this._input.read_bytes_async(32, GLib.PRIORITY_DEFAULT, this._cancellable);
-            } catch {
-                if (!this._cancellable.is_cancelled()) {
+            } catch (e) {
+                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
                     this.close();
                     this.emit('disconnected');
                 }
@@ -230,7 +233,7 @@ export class HidppLink extends GObject.Object {
                 devnumber, hi: data[2], lo: data[3], reject,
                 timeoutId: GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () => {
                     this._waiters = this._waiters.filter(w => w !== waiter);
-                    reject(new Error('HID++ request timed out'));
+                    reject(new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out' }));
                     return GLib.SOURCE_REMOVE;
                 }),
                 resolve: reply => {
@@ -302,8 +305,7 @@ export class HidppLink extends GObject.Object {
             const isBluetooth = !this._isReceiver;
             this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte), isBluetooth });
         } catch (e) {
-            if (!this._cancellable.is_cancelled())
-                console.error(`logi-battery: ${this.path} devnumber 0x${devnumber.toString(16)} unresponsive: ${e.message}`);
+            logUnlessCancelled(e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);
         }
     }
@@ -331,8 +333,7 @@ export class HidppLink extends GObject.Object {
                     await this._refreshDevice(devnumber);
             }
         } catch (e) {
-            if (!this._cancellable.is_cancelled())
-                console.error(`logi-battery: refreshDevices on ${this.path} failed: ${e.message}`);
+            logUnlessCancelled(e, `refreshDevices on ${this.path} failed`);
         } finally {
             this._refreshing = false;
         }

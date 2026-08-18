@@ -1,3 +1,11 @@
+import Gio from 'gi://Gio';
+
+// A cancelled operation is the extension being disabled, not a failure
+export function logUnlessCancelled(error, message) {
+    if (!error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+        console.error(`logi-battery: ${message}: ${error.message}`);
+}
+
 export function deviceKindIconName(kind) {
     switch (kind) {
     case 'keyboard': return 'input-keyboard-symbolic';

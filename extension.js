@@ -1,5 +1,4 @@
 import GObject from 'gi://GObject';
-import Gio from 'gi://Gio';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
@@ -9,19 +8,11 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
-import { discoverHidppInterfaces, watchHidrawDirectory, HidppLink } from './hidpp.js';
-import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor, logUnlessCancelled } from './utils.js';
+import { HidppMonitor } from './hidpp.js';
+import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
 
 function makeStatusIcon(iconName) {
     return new St.Icon({ icon_name: iconName, style_class: 'system-status-icon' });
-}
-
-function tryOpenLink(path, isReceiver) {
-    try {
-        return new HidppLink(path, { isReceiver });
-    } catch {
-        return null;
-    }
 }
 
 class Indicator extends PanelMenu.Button {
@@ -33,9 +24,7 @@ class Indicator extends PanelMenu.Button {
         super(0.5, extension.metadata.name);
 
         this._settings = extension.getSettings();
-        this._cancellable = new Gio.Cancellable();
         this._view = null;
-        this._hidppLinks = [];
 
         this._box = new St.BoxLayout({ style_class: 'logi-battery-box' });
         this.add_child(this._box);
@@ -44,75 +33,17 @@ class Indicator extends PanelMenu.Button {
 
         this._settings.connectObject('changed::display-mode', () => {
             if (this._view === 'devices')
-                this._renderDevices(this._getAllDevices());
+                this._renderDevices(this._monitor.getDevices());
         }, this);
 
-        this._connectHidpp().then(() => this._refresh());
-        this._hidrawMonitor = watchHidrawDirectory(() => {
-            this._connectHidpp().then(connected => {
-                if (connected)
-                    this._refresh();
-            });
-        });
-
         this._setView('loading');
-    }
 
-    async _connectHidpp() {
-        let interfaces;
-        try {
-            interfaces = await discoverHidppInterfaces(this._cancellable);
-        } catch (e) {
-            logUnlessCancelled(e, 'discoverHidppInterfaces failed');
-            return false;
-        }
-
-        if (this._cancellable.is_cancelled())
-            return false;
-
-        const knownPaths = new Set(this._hidppLinks.map(link => link.path));
-        let connectedAny = false;
-
-        for (const { path, isReceiver } of interfaces) {
-            if (knownPaths.has(path))
-                continue;
-
-            const link = tryOpenLink(path, isReceiver);
-            if (!link)
-                continue;
-
-            link.connectObject(
-                'changed', () => this._render(),
-                'disconnected', () => {
-                    link.disconnectObject(this);
-                    this._hidppLinks = this._hidppLinks.filter(l => l !== link);
-                    this._render();
-                },
-                this);
-            this._hidppLinks.push(link);
-            connectedAny = true;
-        }
-
-        return connectedAny;
-    }
-
-    async _refresh() {
-        if (this._cancellable.is_cancelled())
-            return;
-        if (this._hidppLinks.length)
-            await Promise.all(this._hidppLinks.map(link => link.refreshDevices()));
-        else
-            this._render();
-    }
-
-    _getAllDevices() {
-        return this._hidppLinks.flatMap(link => link.getDevices());
+        this._monitor = new HidppMonitor();
+        this._monitor.connectObject('changed', () => this._render(), this);
     }
 
     _render() {
-        if (this._cancellable.is_cancelled())
-            return;
-        const devices = this._getAllDevices();
+        const devices = this._monitor.getDevices();
         this._setView(devices.length ? 'devices' : 'nodevices', devices);
     }
 
@@ -191,17 +122,11 @@ class Indicator extends PanelMenu.Button {
     }
 
     destroy() {
-        this._cancellable.cancel();
-
-        this._hidppLinks.forEach(link => {
-            link.disconnectObject(this);
-            link.close();
-        });
-        this._hidppLinks = [];
-        this._hidrawMonitor.cancel();
-
+        this._monitor.disconnectObject(this);
         this._settings.disconnectObject(this);
         this._displaySwitch.disconnectObject(this);
+
+        this._monitor.destroy();
 
         super.destroy();
     }

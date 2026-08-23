@@ -58,7 +58,7 @@ async function tryReadUevent(path, cancellable) {
     }
 }
 
-export async function discoverHidppInterfaces(cancellable = null) {
+async function discoverHidppInterfaces(cancellable) {
     const dir = Gio.File.new_for_path('/sys/class/hidraw');
     const enumerator = await dir.enumerate_children_async(
         'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, cancellable);
@@ -99,18 +99,12 @@ export async function discoverHidppInterfaces(cancellable = null) {
     return interfaces;
 }
 
-export function watchHidrawDirectory(callback) {
-    const monitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
-    const signalId = monitor.connect('changed', (source, file) => {
-        if (file.get_basename().startsWith('hidraw'))
-            callback();
-    });
-    return {
-        cancel() {
-            monitor.disconnect(signalId);
-            monitor.cancel();
-        },
-    };
+function tryOpenLink(path, isReceiver) {
+    try {
+        return new HidppLink(path, { isReceiver });
+    } catch {
+        return null;
+    }
 }
 
 function isConnectionNotification(data) {
@@ -122,7 +116,7 @@ function isCharging(statusByte) {
 }
 
 // HID++ devices push battery and status events unsolicited
-export class HidppLink extends GObject.Object {
+class HidppLink extends GObject.Object {
     static [GObject.signals] = {
         'changed': {},
         'disconnected': {},
@@ -344,5 +338,80 @@ export class HidppLink extends GObject.Object {
             this._refreshPending = false;
             await this.refreshDevices();
         }
+    }
+}
+
+export class HidppMonitor extends GObject.Object {
+    static [GObject.signals] = {
+        'changed': {},
+    };
+
+    static {
+        GObject.registerClass(this);
+    }
+
+    constructor() {
+        super();
+
+        this._cancellable = new Gio.Cancellable();
+        this._links = [];
+
+        this._devMonitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
+        this._devMonitor.connectObject('changed', (_monitor, file) => {
+            if (file.get_basename().startsWith('hidraw'))
+                this._connectInterfaces();
+        }, this);
+
+        this._connectInterfaces();
+    }
+
+    destroy() {
+        this._cancellable.cancel();
+        this._devMonitor.disconnectObject(this);
+        this._devMonitor.cancel();
+
+        this._links.forEach(link => {
+            link.disconnectObject(this);
+            link.close();
+        });
+        this._links = [];
+    }
+
+    getDevices() {
+        return this._links.flatMap(link => link.getDevices());
+    }
+
+    async _connectInterfaces() {
+        let interfaces;
+        try {
+            interfaces = await discoverHidppInterfaces(this._cancellable);
+        } catch (e) {
+            logUnlessCancelled(e, 'HID++ interface discovery failed');
+            return;
+        }
+
+        const knownPaths = new Set(this._links.map(link => link.path));
+
+        for (const { path, isReceiver } of interfaces) {
+            if (knownPaths.has(path))
+                continue;
+
+            const link = tryOpenLink(path, isReceiver);
+            if (!link)
+                continue;
+
+            link.connectObject(
+                'changed', () => this.emit('changed'),
+                'disconnected', () => {
+                    link.disconnectObject(this);
+                    this._links = this._links.filter(l => l !== link);
+                    this.emit('changed');
+                },
+                this);
+            this._links.push(link);
+            link.refreshDevices();
+        }
+
+        this.emit('changed');
     }
 }

@@ -1,9 +1,9 @@
 import Gio from 'gi://Gio';
 
 // A cancelled operation is the extension being disabled, not a failure
-export function logUnlessCancelled(error, message) {
+export function logUnlessCancelled(logger, error, message) {
     if (!error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
-        console.warn(`logi-battery: ${message}: ${error.message}`);
+        logger.warn(`${message}: ${error.message}`);
 }
 
 export function deviceKindIconName(kind) {

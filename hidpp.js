@@ -99,9 +99,9 @@ async function discoverHidppInterfaces(cancellable) {
     return interfaces;
 }
 
-function tryOpenLink(path, isReceiver) {
+function tryOpenLink(path, logger, isReceiver) {
     try {
-        return new HidppLink(path, { isReceiver });
+        return new HidppLink(path, logger, { isReceiver });
     } catch {
         return null;
     }
@@ -126,13 +126,14 @@ class HidppLink extends GObject.Object {
         GObject.registerClass(this);
     }
 
-    constructor(path, { isReceiver }) {
+    constructor(path, logger, { isReceiver }) {
         super();
 
         const ioStream = Gio.File.new_for_path(path).open_readwrite(null);
         const fd = ioStream.get_input_stream().get_fd();
 
         this.path = path;
+        this._logger = logger;
         this._isReceiver = isReceiver;
         this._ioStream = ioStream;
         this._input = new GioUnix.InputStream({ fd, close_fd: false });
@@ -299,7 +300,7 @@ class HidppLink extends GObject.Object {
             const isBluetooth = !this._isReceiver;
             this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte), isBluetooth });
         } catch (e) {
-            logUnlessCancelled(e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
+            logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);
         }
     }
@@ -327,7 +328,7 @@ class HidppLink extends GObject.Object {
                     await this._refreshDevice(devnumber);
             }
         } catch (e) {
-            logUnlessCancelled(e, `refreshDevices on ${this.path} failed`);
+            logUnlessCancelled(this._logger, e, `refreshDevices on ${this.path} failed`);
         } finally {
             this._refreshing = false;
         }
@@ -350,9 +351,10 @@ export class HidppMonitor extends GObject.Object {
         GObject.registerClass(this);
     }
 
-    constructor() {
+    constructor(logger) {
         super();
 
+        this._logger = logger;
         this._cancellable = new Gio.Cancellable();
         this._links = [];
 
@@ -386,7 +388,7 @@ export class HidppMonitor extends GObject.Object {
         try {
             interfaces = await discoverHidppInterfaces(this._cancellable);
         } catch (e) {
-            logUnlessCancelled(e, 'HID++ interface discovery failed');
+            logUnlessCancelled(this._logger, e, 'HID++ interface discovery failed');
             return;
         }
 
@@ -396,7 +398,7 @@ export class HidppMonitor extends GObject.Object {
             if (knownPaths.has(path))
                 continue;
 
-            const link = tryOpenLink(path, isReceiver);
+            const link = tryOpenLink(path, this._logger, isReceiver);
             if (!link)
                 continue;
 

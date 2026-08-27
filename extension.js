@@ -38,7 +38,7 @@ class Indicator extends PanelMenu.Button {
 
         this._setView('loading');
 
-        this._monitor = new HidppMonitor();
+        this._monitor = new HidppMonitor(extension.getLogger());
         this._monitor.connectObject('changed', () => this._render(), this);
     }
 

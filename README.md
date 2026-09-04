@@ -32,6 +32,8 @@ Settings menu:
 - GNOME Shell 50
 - Logitech devices connected either through a Unifying/Bolt receiver, or
   paired directly over Bluetooth
+- A Bolt receiver on Linux before 7.3 needs the udev rule from the
+  installation section
 
 ## How it works
 
@@ -63,6 +65,17 @@ gnome-extensions enable logi-battery@hornc-greedy.github.io
 ```
 
 Log out and back in (Wayland)
+
+### Bolt receiver on Linux before 7.3
+
+The extension reads the receiver's HID++ interface directly and needs a
+udev rule for access. Install it once from the repository:
+
+```sh
+sudo cp udev/70-logi-battery-bolt.rules /etc/udev/rules.d/
+sudo udevadm control --reload
+sudo udevadm trigger --subsystem-match=hidraw
+```
 
 ## Development
 

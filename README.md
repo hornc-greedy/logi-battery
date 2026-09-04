@@ -35,8 +35,11 @@ Settings menu:
 
 ## How it works
 
-- Talks HID++ 2.0 directly to each device's `/sys/class/hidraw` interface
-- No Solaar, no UPower, no separate daemon in between
+- Reads batteries from UPower over D-Bus, which gets them from the
+  kernel's HID++ driver
+- Talks HID++ 2.0 directly to a Bolt receiver on Linux before 7.3,
+  since the kernel only drives it from 7.3 on
+- No Solaar, no separate daemon in between
 - Event-driven, not polled - no fixed refresh interval
 - Panel updates whenever a device pushes its own battery-status or
   connect/disconnect notification

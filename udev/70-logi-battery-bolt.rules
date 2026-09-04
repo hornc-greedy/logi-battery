@@ -1,0 +1,5 @@
+# Gives the logged-in user the HID++ interface of a Logitech Bolt receiver,
+# needed only on kernels before 7.3, where hid-logitech-dj does not drive it.
+# The keyboard and mouse interfaces stay root-only.
+SUBSYSTEM=="hidraw", ACTION!="remove", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", ENV{LOGI_BATTERY_BOLT}="1"
+ENV{LOGI_BATTERY_BOLT}=="1", ATTRS{bInterfaceNumber}=="02", TAG+="uaccess"

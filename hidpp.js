@@ -344,6 +344,7 @@ class HidppLink extends GObject.Object {
     }
 }
 
+// Speaks HID++ to receivers the kernel does not drive, reachable through the udev rule in udev/
 export class HidppMonitor extends GObject.Object {
     static [GObject.signals] = {
         'changed': {},
@@ -360,6 +361,7 @@ export class HidppMonitor extends GObject.Object {
         this._cancellable = new Gio.Cancellable();
         this._links = [];
 
+        // udev sets the ACL after the node appears, which arrives as an attribute change
         this._devMonitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
         this._devMonitor.connectObject('changed', (_monitor, file) => {
             if (file.get_basename().startsWith('hidraw'))

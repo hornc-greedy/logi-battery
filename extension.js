@@ -8,6 +8,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
+import { UPowerBatteryMonitor } from './upower.js';
 import { HidppMonitor } from './hidpp.js';
 import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
 
@@ -33,17 +34,22 @@ class Indicator extends PanelMenu.Button {
 
         this._settings.connectObject('changed::display-mode', () => {
             if (this._view === 'devices')
-                this._renderDevices(this._monitor.getDevices());
+                this._renderDevices(this._getAllDevices());
         }, this);
 
         this._setView('loading');
 
-        this._monitor = new HidppMonitor(extension.getLogger());
-        this._monitor.connectObject('changed', () => this._render(), this);
+        const logger = extension.getLogger();
+        this._monitors = [new UPowerBatteryMonitor(logger), new HidppMonitor(logger)];
+        this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._render(), this));
+    }
+
+    _getAllDevices() {
+        return this._monitors.flatMap(monitor => monitor.getDevices());
     }
 
     _render() {
-        const devices = this._monitor.getDevices();
+        const devices = this._getAllDevices();
         this._setView(devices.length ? 'devices' : 'nodevices', devices);
     }
 
@@ -122,11 +128,11 @@ class Indicator extends PanelMenu.Button {
     }
 
     destroy() {
-        this._monitor.disconnectObject(this);
+        this._monitors.forEach(monitor => monitor.disconnectObject(this));
         this._settings.disconnectObject(this);
         this._displaySwitch.disconnectObject(this);
 
-        this._monitor.destroy();
+        this._monitors.forEach(monitor => monitor.destroy());
 
         super.destroy();
     }

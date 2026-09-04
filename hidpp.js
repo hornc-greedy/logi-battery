@@ -13,11 +13,13 @@ Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async', 'next_files_fin
 const LOGITECH_VENDOR_ID = '046D';
 
 const BUS_USB = '0003';
-const BUS_BLUETOOTH = '0005';
 
 // Logitech receiver (Unifying/Bolt/Nano) product ID range
 const RECEIVER_PRODUCT_ID_MIN = 0xc500;
 const RECEIVER_PRODUCT_ID_MAX = 0xc5ff;
+
+// A receiver the kernel's hid-logitech-dj driver has not claimed
+const UNDRIVEN_RECEIVER_DRIVER = 'hid-generic';
 
 const HIDPP_SHORT_MESSAGE_ID = 0x10;
 const HIDPP_LONG_MESSAGE_ID = 0x11;
@@ -58,11 +60,11 @@ async function tryReadUevent(path, cancellable) {
     }
 }
 
-async function discoverHidppInterfaces(cancellable) {
+async function discoverUndrivenReceivers(cancellable) {
     const dir = Gio.File.new_for_path('/sys/class/hidraw');
     const enumerator = await dir.enumerate_children_async(
         'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, cancellable);
-    const interfaces = [];
+    const paths = [];
 
     let infos;
     while ((infos = await enumerator.next_files_async(10, GLib.PRIORITY_DEFAULT, cancellable)).length) {
@@ -74,29 +76,29 @@ async function discoverHidppInterfaces(cancellable) {
             if (!contents)
                 continue;
 
-            const match = new TextDecoder().decode(contents).match(/HID_ID=([0-9A-Fa-f]+):0000([0-9A-Fa-f]{4}):0000([0-9A-Fa-f]{4})/);
+            const uevent = new TextDecoder().decode(contents);
+            const match = uevent.match(/HID_ID=([0-9A-Fa-f]+):0000([0-9A-Fa-f]{4}):0000([0-9A-Fa-f]{4})/);
             if (!match)
                 continue;
 
             const [, bus, vendor, product] = match;
-            if (vendor.toUpperCase() !== LOGITECH_VENDOR_ID)
-                continue;
-
-            const isBluetooth = bus.toUpperCase() === BUS_BLUETOOTH;
-
-            // The real USB HID++ interface has no input node, unlike the compat interfaces
-            if (!isBluetooth && GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
-                continue;
-
             const productId = parseInt(product, 16);
-            const isReceiver = bus.toUpperCase() === BUS_USB
-                && productId >= RECEIVER_PRODUCT_ID_MIN && productId <= RECEIVER_PRODUCT_ID_MAX;
+            if (bus !== BUS_USB || vendor.toUpperCase() !== LOGITECH_VENDOR_ID
+                || productId < RECEIVER_PRODUCT_ID_MIN || productId > RECEIVER_PRODUCT_ID_MAX)
+                continue;
 
-            interfaces.push({ path: `/dev/${name}`, isReceiver });
+            if (!uevent.includes(`DRIVER=${UNDRIVEN_RECEIVER_DRIVER}\n`))
+                continue;
+
+            // The HID++ interface has no input node, unlike the keyboard and mouse interfaces
+            if (GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
+                continue;
+
+            paths.push(`/dev/${name}`);
         }
     }
 
-    return interfaces;
+    return paths;
 }
 
 function tryOpenLink(path, logger, isReceiver) {
@@ -384,21 +386,21 @@ export class HidppMonitor extends GObject.Object {
     }
 
     async _connectInterfaces() {
-        let interfaces;
+        let paths;
         try {
-            interfaces = await discoverHidppInterfaces(this._cancellable);
+            paths = await discoverUndrivenReceivers(this._cancellable);
         } catch (e) {
-            logUnlessCancelled(this._logger, e, 'HID++ interface discovery failed');
+            logUnlessCancelled(this._logger, e, 'receiver discovery failed');
             return;
         }
 
         const knownPaths = new Set(this._links.map(link => link.path));
 
-        for (const { path, isReceiver } of interfaces) {
+        for (const path of paths) {
             if (knownPaths.has(path))
                 continue;
 
-            const link = tryOpenLink(path, this._logger, isReceiver);
+            const link = tryOpenLink(path, this._logger, true);
             if (!link)
                 continue;
 
@@ -413,7 +415,5 @@ export class HidppMonitor extends GObject.Object {
             this._links.push(link);
             link.refreshDevices();
         }
-
-        this.emit('changed');
     }
 }

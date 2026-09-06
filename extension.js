@@ -9,7 +9,7 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
 import { UPowerBatteryMonitor } from './upower.js';
-import { HidppMonitor } from './hidpp.js';
+import { HidppReceiverMonitor } from './hidpp.js';
 import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
 
 function makeStatusIcon(iconName) {
@@ -40,7 +40,7 @@ class Indicator extends PanelMenu.Button {
         this._setView('loading');
 
         const logger = extension.getLogger();
-        this._monitors = [new UPowerBatteryMonitor(logger), new HidppMonitor(logger)];
+        this._monitors = [new UPowerBatteryMonitor(logger), new HidppReceiverMonitor(logger)];
         this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._render(), this));
     }
 

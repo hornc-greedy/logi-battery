@@ -99,7 +99,7 @@ async function discoverUndrivenReceivers(cancellable) {
 
 function tryOpenLink(path, logger) {
     try {
-        return new HidppLink(path, logger);
+        return new HidppReceiverLink(path, logger);
     } catch {
         return null;
     }
@@ -114,7 +114,7 @@ function isCharging(statusByte) {
 }
 
 // HID++ devices push battery and status events unsolicited
-class HidppLink extends GObject.Object {
+class HidppReceiverLink extends GObject.Object {
     static [GObject.signals] = {
         'changed': {},
         'disconnected': {},
@@ -311,7 +311,7 @@ class HidppLink extends GObject.Object {
 }
 
 // Speaks HID++ to receivers the kernel does not drive, reachable through the udev rule in udev/
-export class HidppMonitor extends GObject.Object {
+export class HidppReceiverMonitor extends GObject.Object {
     static [GObject.signals] = {
         'changed': {},
     };
@@ -331,10 +331,10 @@ export class HidppMonitor extends GObject.Object {
         this._devMonitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
         this._devMonitor.connectObject('changed', (_monitor, file) => {
             if (file.get_basename().startsWith('hidraw'))
-                this._connectInterfaces();
+                this._connectReceivers();
         }, this);
 
-        this._connectInterfaces();
+        this._connectReceivers();
     }
 
     destroy() {
@@ -353,7 +353,7 @@ export class HidppMonitor extends GObject.Object {
         return this._links.flatMap(link => link.getDevices());
     }
 
-    async _connectInterfaces() {
+    async _connectReceivers() {
         let paths;
         try {
             paths = await discoverUndrivenReceivers(this._cancellable);

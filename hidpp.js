@@ -30,9 +30,6 @@ const RECEIVER_DEVNUMBER = 0xff;
 const GET_SHORT_REGISTER = 0x81;
 const REG_RECEIVER_CONNECTION = 0x02;
 
-// Direct HID++2.0 devices use devnumber 0xFF, falling back to 0x00
-const DIRECT_DEVNUMBER_CANDIDATES = [0xff, 0x00];
-
 const ROOT_FEATURE_INDEX = 0x00;
 const ROOT_GET_FEATURE_FUNCTION = 0x00;
 const OUR_SOFTWARE_ID = 0x01;
@@ -48,7 +45,6 @@ const DEVICE_KIND_NAMES = [
     'keyboard', 'remote_control', 'numpad', 'mouse', 'touchpad', 'trackball', 'presenter', 'receiver',
 ];
 
-// Idle Bluetooth devices in sniff mode need longer to wake for their first reply
 const REQUEST_TIMEOUT_SECONDS = 5;
 
 async function tryReadUevent(path, cancellable) {
@@ -101,9 +97,9 @@ async function discoverUndrivenReceivers(cancellable) {
     return paths;
 }
 
-function tryOpenLink(path, logger, isReceiver) {
+function tryOpenLink(path, logger) {
     try {
-        return new HidppLink(path, logger, { isReceiver });
+        return new HidppLink(path, logger);
     } catch {
         return null;
     }
@@ -128,7 +124,7 @@ class HidppLink extends GObject.Object {
         GObject.registerClass(this);
     }
 
-    constructor(path, logger, { isReceiver }) {
+    constructor(path, logger) {
         super();
 
         const ioStream = Gio.File.new_for_path(path).open_readwrite(null);
@@ -136,7 +132,6 @@ class HidppLink extends GObject.Object {
 
         this.path = path;
         this._logger = logger;
-        this._isReceiver = isReceiver;
         this._ioStream = ioStream;
         this._input = new GioUnix.InputStream({ fd, close_fd: false });
         this._output = new GioUnix.OutputStream({ fd, close_fd: false });
@@ -161,7 +156,7 @@ class HidppLink extends GObject.Object {
     }
 
     getDevices() {
-        return Array.from(this._devices.values(), ({ kind, percent, charging, isBluetooth }) => ({ kind, percent, charging, isBluetooth }));
+        return Array.from(this._devices.values(), ({ kind, percent, charging }) => ({ kind, percent, charging, isBluetooth: false }));
     }
 
     async _readLoop() {
@@ -179,16 +174,13 @@ class HidppLink extends GObject.Object {
 
             const data = bytes.get_data();
 
-            // No receiver: any traffic before a device resolves means it just woke up
-            if (isConnectionNotification(data) || (!this._isReceiver && !this._devices.size))
+            if (isConnectionNotification(data))
                 this.refreshDevices();
 
             this._handleBatteryEvent(data);
 
             this._waiters = this._waiters.filter(waiter => {
-                // A direct link may reply on devnumber 0x00 or 0xFF interchangeably
-                const devnumberMatches = data[1] === waiter.devnumber || data[1] === (waiter.devnumber ^ 0xff);
-                if (data.length >= 4 && devnumberMatches && data[2] === waiter.hi && data[3] === waiter.lo) {
+                if (data.length >= 4 && data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
                     waiter.resolve(data);
                     return false;
                 }
@@ -201,8 +193,7 @@ class HidppLink extends GObject.Object {
         if (data[0] !== HIDPP_LONG_MESSAGE_ID || data[3] !== HIDPP_EVENT_FUNCTION_SW_ID)
             return;
 
-        // A direct link may push events under either devnumber
-        const device = this._devices.get(data[1]) ?? this._devices.get(data[1] ^ 0xff);
+        const device = this._devices.get(data[1]);
         if (!device || device.batteryFeatureIndex !== data[2])
             return;
 
@@ -213,11 +204,9 @@ class HidppLink extends GObject.Object {
     }
 
     _request(devnumber, requestId, params = [], long = false) {
-        // Direct connections always use the long report format
-        const useLong = long || !this._isReceiver;
-        const size = useLong ? 20 : 7;
+        const size = long ? 20 : 7;
         const data = new Uint8Array(size);
-        data[0] = useLong ? HIDPP_LONG_MESSAGE_ID : HIDPP_SHORT_MESSAGE_ID;
+        data[0] = long ? HIDPP_LONG_MESSAGE_ID : HIDPP_SHORT_MESSAGE_ID;
         data[1] = devnumber;
         data[2] = (requestId >> 8) & 0xff;
         data[3] = requestId & 0xff;
@@ -245,22 +234,6 @@ class HidppLink extends GObject.Object {
     async _getConnectedDeviceCount() {
         const reply = await this._request(RECEIVER_DEVNUMBER, (GET_SHORT_REGISTER << 8) | REG_RECEIVER_CONNECTION);
         return reply[5];
-    }
-
-    async _resolveDirectDevnumber() {
-        if (this._directDevnumber !== undefined)
-            return this._directDevnumber;
-
-        for (const candidate of DIRECT_DEVNUMBER_CANDIDATES) {
-            try {
-                await this._getFeatureIndex(candidate, FEATURE_UNIFIED_BATTERY);
-                this._directDevnumber = candidate;
-                return candidate;
-                // eslint-disable-next-line no-empty -- resolved 0 vs. thrown must stay distinguishable
-            } catch {}
-        }
-
-        return undefined;
     }
 
     // Feature index and function number pack into the request ID
@@ -299,8 +272,7 @@ class HidppLink extends GObject.Object {
             ]);
             const kind = nameFeatureIndex ? await this._getDeviceKind(devnumber, nameFeatureIndex) : 'other';
 
-            const isBluetooth = !this._isReceiver;
-            this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte), isBluetooth });
+            this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte) });
         } catch (e) {
             logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);
@@ -315,19 +287,13 @@ class HidppLink extends GObject.Object {
         this._refreshing = true;
 
         try {
-            if (this._isReceiver) {
-                const count = await this._getConnectedDeviceCount();
-                const devnumbers = Array.from({ length: count }, (_, i) => i + 1);
-                await Promise.all(devnumbers.map(devnumber => this._refreshDevice(devnumber)));
+            const count = await this._getConnectedDeviceCount();
+            const devnumbers = Array.from({ length: count }, (_, i) => i + 1);
+            await Promise.all(devnumbers.map(devnumber => this._refreshDevice(devnumber)));
 
-                for (const devnumber of this._devices.keys()) {
-                    if (devnumber > count)
-                        this._devices.delete(devnumber);
-                }
-            } else {
-                const devnumber = await this._resolveDirectDevnumber();
-                if (devnumber !== undefined)
-                    await this._refreshDevice(devnumber);
+            for (const devnumber of this._devices.keys()) {
+                if (devnumber > count)
+                    this._devices.delete(devnumber);
             }
         } catch (e) {
             logUnlessCancelled(this._logger, e, `refreshDevices on ${this.path} failed`);
@@ -402,7 +368,7 @@ export class HidppMonitor extends GObject.Object {
             if (knownPaths.has(path))
                 continue;
 
-            const link = tryOpenLink(path, this._logger, true);
+            const link = tryOpenLink(path, this._logger);
             if (!link)
                 continue;
 

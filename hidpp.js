@@ -24,6 +24,7 @@ const UNDRIVEN_RECEIVER_DRIVER = 'hid-generic';
 const HIDPP_SHORT_MESSAGE_ID = 0x10;
 const HIDPP_LONG_MESSAGE_ID = 0x11;
 const HIDPP_CONNECTION_NOTIFICATION = 0x41;
+const HIDPP_LINK_STATUS_MASK = 0x40;
 const HIDPP_EVENT_FUNCTION_SW_ID = 0x00;
 
 const RECEIVER_DEVNUMBER = 0xff;
@@ -109,6 +110,11 @@ function isConnectionNotification(data) {
     return data.length >= 3 && data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_CONNECTION_NOTIFICATION;
 }
 
+// The device-info byte of a connection notification sets this bit while the link is down
+function isLinkEstablished(data) {
+    return !(data[4] & HIDPP_LINK_STATUS_MASK);
+}
+
 function isCharging(statusByte) {
     return CHARGING_STATUSES.has(BATTERY_STATUS_NAMES[statusByte]);
 }
@@ -174,8 +180,14 @@ class HidppReceiverLink extends GObject.Object {
 
             const data = bytes.get_data();
 
-            if (isConnectionNotification(data))
-                this.refreshDevices();
+            if (isConnectionNotification(data)) {
+                if (isLinkEstablished(data)) {
+                    this.refreshDevices();
+                } else {
+                    this._devices.delete(data[1]);
+                    this.emit('changed');
+                }
+            }
 
             this._handleBatteryEvent(data);
 

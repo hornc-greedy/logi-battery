@@ -229,10 +229,9 @@ class HidppReceiverLink extends GObject.Object {
         return new Promise((resolve, reject) => {
             const waiter = {
                 devnumber, hi: data[2], lo: data[3], reject,
-                timeoutId: GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () => {
+                timeoutId: GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () => {
                     this._waiters = this._waiters.filter(w => w !== waiter);
                     reject(new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out' }));
-                    return GLib.SOURCE_REMOVE;
                 }),
                 resolve: reply => {
                     GLib.Source.remove(waiter.timeoutId);

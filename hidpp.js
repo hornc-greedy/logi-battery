@@ -74,13 +74,9 @@ async function discoverUndrivenReceivers(cancellable) {
                 continue;
 
             const uevent = new TextDecoder().decode(contents);
-            const match = uevent.match(/HID_ID=([0-9A-Fa-f]+):0000([0-9A-Fa-f]{4}):0000([0-9A-Fa-f]{4})/);
-            if (!match)
-                continue;
-
-            const [, bus, vendor, product] = match;
+            const [, bus, vendor, product] = uevent.match(/HID_ID=([0-9A-F]{4}):0000([0-9A-F]{4}):0000([0-9A-F]{4})/);
             const productId = parseInt(product, 16);
-            if (bus !== BUS_USB || vendor.toUpperCase() !== LOGITECH_VENDOR_ID
+            if (bus !== BUS_USB || vendor !== LOGITECH_VENDOR_ID
                 || productId < RECEIVER_PRODUCT_ID_MIN || productId > RECEIVER_PRODUCT_ID_MAX)
                 continue;
 
@@ -107,7 +103,7 @@ function tryOpenLink(path, logger) {
 }
 
 function isConnectionNotification(data) {
-    return data.length >= 3 && data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_CONNECTION_NOTIFICATION;
+    return data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_CONNECTION_NOTIFICATION;
 }
 
 // The device-info byte of a connection notification sets this bit while the link is down
@@ -192,7 +188,7 @@ class HidppReceiverLink extends GObject.Object {
             this._handleBatteryEvent(data);
 
             this._waiters = this._waiters.filter(waiter => {
-                if (data.length >= 4 && data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
+                if (data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
                     waiter.resolve(data);
                     return false;
                 }

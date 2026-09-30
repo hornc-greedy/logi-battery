@@ -4,5 +4,6 @@
   "description": "Shows battery percentage and charging status in the top bar for input devices such as the Logitech MX Master and MX Keys.",
   "shell-version": [ "50", "51" ],
   "url": "https://github.com/hornc-greedy/logi-battery",
-  "settings-schema": "org.gnome.shell.extensions.logi-battery"
+  "settings-schema": "org.gnome.shell.extensions.logi-battery",
+  "version-name": "1.2"
 }

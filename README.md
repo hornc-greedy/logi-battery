@@ -29,7 +29,7 @@ Settings menu:
 
 ## Requirements
 
-- GNOME Shell 50
+- GNOME Shell 50 or 51
 - Logitech devices connected either through a Unifying/Bolt receiver, or
   paired directly over Bluetooth
 - A Bolt receiver on Linux before 7.3 needs the udev rule from the

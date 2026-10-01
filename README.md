@@ -57,6 +57,10 @@ Settings menu:
 
 ## Installation
 
+Install it from
+[extensions.gnome.org](https://extensions.gnome.org/extension/10378/logi-battery-indicator/),
+or from source:
+
 ```sh
 git clone https://github.com/hornc-greedy/logi-battery.git
 cp -r logi-battery ~/.local/share/gnome-shell/extensions/logi-battery@hornc-greedy.github.io

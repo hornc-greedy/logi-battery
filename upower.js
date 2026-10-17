@@ -111,10 +111,16 @@ export class UPowerBatteryMonitor extends GObject.Object {
     async _addDevice(path) {
         const proxy = await newUPowerProxy(path, UPOWER_DEVICE_INTERFACE, this._cancellable);
         const nativePath = proxy.get_cached_property('NativePath').unpack();
-        if (!nativePath.startsWith(HIDPP_BATTERY_PREFIX))
+        const type = proxy.get_cached_property('Type').unpack();
+        const model = proxy.get_cached_property('Model').unpack();
+        const bluetoothKeyboard = nativePath.startsWith('/org/bluez/')
+            && type === 6 && model.toUpperCase().includes('MX KEYS');
+        if (!nativePath.startsWith(HIDPP_BATTERY_PREFIX) && !bluetoothKeyboard)
             return;
 
-        const isBluetooth = await isBluetoothSupply(nativePath, this._cancellable);
+        const isBluetooth = bluetoothKeyboard ||
+            await isBluetoothSupply(nativePath, this._cancellable);
+
         proxy.connectObject('g-properties-changed', () => this.emit('changed'), this);
         this._devices.set(path, { proxy, isBluetooth });
     }

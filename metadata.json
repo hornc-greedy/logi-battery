@@ -5,5 +5,5 @@
   "shell-version": [ "50", "51" ],
   "url": "https://github.com/hornc-greedy/logi-battery",
   "settings-schema": "org.gnome.shell.extensions.logi-battery",
-  "version-name": "1.2"
+  "version-name": "1.2.1"
 }

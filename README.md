@@ -38,7 +38,7 @@ Settings menu:
 ## How it works
 
 - Reads batteries from UPower over D-Bus, which gets them from the
-  kernel's HID++ driver
+  kernel's HID++ driver or, for Bluetooth LE devices, from BlueZ
 - Talks HID++ 2.0 directly to a Bolt receiver on Linux before 7.3,
   since the kernel only drives it from 7.3 on
 - No Solaar, no separate daemon in between

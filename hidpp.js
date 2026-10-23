@@ -23,13 +23,22 @@ const UNDRIVEN_RECEIVER_DRIVER = 'hid-generic';
 
 const HIDPP_SHORT_MESSAGE_ID = 0x10;
 const HIDPP_LONG_MESSAGE_ID = 0x11;
+const HIDPP_DISCONNECTION_NOTIFICATION = 0x40;
+const HIDPP_PERMANENT_DISCONNECTION = 0x02;
 const HIDPP_CONNECTION_NOTIFICATION = 0x41;
 const HIDPP_LINK_STATUS_MASK = 0x40;
 const HIDPP_EVENT_FUNCTION_SW_ID = 0x00;
 
 const RECEIVER_DEVNUMBER = 0xff;
+const SET_SHORT_REGISTER = 0x80;
 const GET_SHORT_REGISTER = 0x81;
-const REG_RECEIVER_CONNECTION = 0x02;
+const REG_ENABLE_REPORTS = 0x00;
+const REG_CONNECTION_STATE = 0x02;
+const FAKE_DEVICE_ARRIVAL = 0x02;
+
+// Measured on the Bolt receiver, which starts with it cleared and then sends no connection notifications
+const ENABLE_WIRELESS_NOTIFICATIONS_BYTE = 1;
+const ENABLE_WIRELESS_NOTIFICATIONS = 0x01;
 
 const ROOT_FEATURE_INDEX = 0x00;
 const ROOT_GET_FEATURE_FUNCTION = 0x00;
@@ -102,6 +111,11 @@ function tryOpenLink(path, logger) {
     }
 }
 
+function isUnpairNotification(data) {
+    return data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_DISCONNECTION_NOTIFICATION
+        && data[3] === HIDPP_PERMANENT_DISCONNECTION;
+}
+
 function isConnectionNotification(data) {
     return data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_CONNECTION_NOTIFICATION;
 }
@@ -140,12 +154,14 @@ class HidppReceiverLink extends GObject.Object {
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
+        this._refreshes = new Map();
 
         this._readLoop();
     }
 
     close() {
         this._cancellable.cancel();
+        this._output.close(null);
         this._ioStream.close(null);
 
         this._waiters.forEach(waiter => {
@@ -154,7 +170,6 @@ class HidppReceiverLink extends GObject.Object {
         });
         this._waiters = [];
         this._devices.clear();
-        this._refreshPending = false;
     }
 
     getDevices() {
@@ -178,11 +193,16 @@ class HidppReceiverLink extends GObject.Object {
 
             if (isConnectionNotification(data)) {
                 if (isLinkEstablished(data)) {
-                    this.refreshDevices();
+                    this._queueRefresh(data[1]);
                 } else {
                     this._devices.delete(data[1]);
                     this.emit('changed');
                 }
+            }
+
+            if (isUnpairNotification(data)) {
+                this._devices.delete(data[1]);
+                this.emit('changed');
             }
 
             this._handleBatteryEvent(data);
@@ -238,11 +258,6 @@ class HidppReceiverLink extends GObject.Object {
         });
     }
 
-    async _getConnectedDeviceCount() {
-        const reply = await this._request(RECEIVER_DEVNUMBER, (GET_SHORT_REGISTER << 8) | REG_RECEIVER_CONNECTION);
-        return reply[5];
-    }
-
     // Feature index and function number pack into the request ID
     _callFeature(devnumber, featureIndex, func, params = [], long = false) {
         const requestId = (featureIndex << 8) | (func << 4) | OUR_SOFTWARE_ID;
@@ -265,6 +280,12 @@ class HidppReceiverLink extends GObject.Object {
         return DEVICE_KIND_NAMES[reply[4]] || 'other';
     }
 
+    // Requests to one device share request IDs, so its refreshes run one after another
+    _queueRefresh(devnumber) {
+        const previous = this._refreshes.get(devnumber) ?? Promise.resolve();
+        this._refreshes.set(devnumber, previous.then(() => this._refreshDevice(devnumber)));
+    }
+
     async _refreshDevice(devnumber) {
         try {
             const batteryFeatureIndex = await this._getFeatureIndex(devnumber, FEATURE_UNIFIED_BATTERY);
@@ -281,38 +302,30 @@ class HidppReceiverLink extends GObject.Object {
 
             this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte) });
         } catch (e) {
-            logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
+            // A refresh queued before close() finds the output stream closed
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CLOSED))
+                logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);
+        } finally {
+            this.emit('changed');
         }
     }
 
+    // Sets one flag and keeps the others, as the kernel's hidpp10_set_register does
+    async _enableWirelessNotifications() {
+        const reply = await this._request(RECEIVER_DEVNUMBER, (GET_SHORT_REGISTER << 8) | REG_ENABLE_REPORTS);
+        const flags = reply.slice(4, 7);
+        flags[ENABLE_WIRELESS_NOTIFICATIONS_BYTE] |= ENABLE_WIRELESS_NOTIFICATIONS;
+        await this._request(RECEIVER_DEVNUMBER, (SET_SHORT_REGISTER << 8) | REG_ENABLE_REPORTS, flags);
+    }
+
+    // The receiver answers with a connection notification per paired device, as hid-logitech-dj does
     async refreshDevices() {
-        if (this._refreshing) {
-            this._refreshPending = true;
-            return;
-        }
-        this._refreshing = true;
-
         try {
-            const count = await this._getConnectedDeviceCount();
-            const devnumbers = Array.from({ length: count }, (_, i) => i + 1);
-            await Promise.all(devnumbers.map(devnumber => this._refreshDevice(devnumber)));
-
-            for (const devnumber of this._devices.keys()) {
-                if (devnumber > count)
-                    this._devices.delete(devnumber);
-            }
+            await this._enableWirelessNotifications();
+            await this._request(RECEIVER_DEVNUMBER, (SET_SHORT_REGISTER << 8) | REG_CONNECTION_STATE, [FAKE_DEVICE_ARRIVAL]);
         } catch (e) {
             logUnlessCancelled(this._logger, e, `refreshDevices on ${this.path} failed`);
-        } finally {
-            this._refreshing = false;
-        }
-
-        this.emit('changed');
-
-        if (this._refreshPending) {
-            this._refreshPending = false;
-            await this.refreshDevices();
         }
     }
 }

@@ -32,15 +32,13 @@ Settings menu:
 - GNOME Shell 50 or 51
 - Logitech devices connected either through a Unifying/Bolt receiver, or
   paired directly over Bluetooth
-- A Bolt receiver on Linux before 7.3 needs the udev rule from the
-  installation section
+- A Bolt receiver needs the udev rule from the installation section
 
 ## How it works
 
 - Reads batteries from UPower over D-Bus, which gets them from the
   kernel's HID++ driver or, for Bluetooth LE devices, from BlueZ
-- Talks HID++ 2.0 directly to a Bolt receiver on Linux before 7.3,
-  since the kernel only drives it from 7.3 on
+- Talks HID++ 2.0 directly to a Bolt receiver, which the kernel does not drive
 - No Solaar, no separate daemon in between
 - Event-driven, not polled - no fixed refresh interval
 - Panel updates whenever a device pushes its own battery-status or
@@ -70,7 +68,7 @@ gnome-extensions enable logi-battery@hornc-greedy.github.io
 
 Log out and back in (Wayland)
 
-### Bolt receiver on Linux before 7.3
+### Bolt receiver
 
 The extension reads the receiver's HID++ interface directly and needs a
 udev rule for access. Install it once from the repository:
@@ -96,8 +94,9 @@ Log out and back in (Wayland)
 ## Support & device compatibility
 
 The panel shows every Logitech device whose battery the kernel's
-`hid-logitech-hidpp` driver reports. The tables follow the driver tables of
-Linux 7.3. Devices marked 7.3 need that kernel.
+`hid-logitech-hidpp` driver reports, plus devices on a Bolt receiver, which
+the extension reads itself. The tables follow the driver tables of Linux 7.3,
+apart from the Bolt row. Devices marked 7.3 need that kernel.
 
 ### Receivers
 
@@ -106,7 +105,7 @@ Any device that reports its battery to one of these receivers
 | Receiver | USB ID |
 | --- | --- |
 | Unifying | `c52b`, `c532` |
-| Bolt | `c548` (7.3, earlier with the udev rule above) |
+| Bolt | `c548` (with the udev rule above) |
 | Nano | `c52f`, `c534` |
 | Lightspeed | `c539`, `c53f`, `c543`, `c547`, `c54d`, `c545` (7.3) |
 | Powerplay | `c53a` |

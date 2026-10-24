@@ -140,8 +140,8 @@ Any device that reports its battery to one of these receivers
 | V470 mouse | `b008` |
 | MX5000, MX5500, diNovo Edge keyboards | `b305`, `b30b`, `b309` |
 
-A Bluetooth device missing from this table, such as the original MX Keys,
-shows up once it is paired through a receiver instead.
+A Bluetooth device missing from this table shows up if BlueZ reports its
+battery, or once it is paired through a receiver.
 
 ### USB cable
 

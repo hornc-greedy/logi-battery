@@ -8,7 +8,7 @@ the top bar for input devices such as the Logitech MX Master and MX Keys
 
 - Shows battery percentage and charging status per device in the top bar
 - Works over a Unifying/Bolt receiver or direct Bluetooth pairing
-- No Solaar or other companion app required
+- No companion app required
 
 Percentage mode:
 
@@ -39,7 +39,7 @@ Settings menu:
 - Reads batteries from UPower over D-Bus, which gets them from the
   kernel's HID++ driver or, for Bluetooth LE devices, from BlueZ
 - Talks HID++ 2.0 directly to a Bolt receiver, which the kernel does not drive
-- No Solaar, no separate daemon in between
+- No daemon of its own
 - Event-driven, not polled - no fixed refresh interval
 - Panel updates whenever a device pushes its own battery-status or
   connect/disconnect notification

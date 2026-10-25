@@ -130,16 +130,12 @@ function isCharging(statusByte) {
 }
 
 // HID++ devices push battery and status events unsolicited
-class HidppReceiverLink extends GObject.Object {
-    static [GObject.signals] = {
+const HidppReceiverLink = GObject.registerClass({
+    Signals: {
         'changed': {},
         'disconnected': {},
-    };
-
-    static {
-        GObject.registerClass(this);
-    }
-
+    },
+}, class HidppReceiverLink extends GObject.Object {
     constructor(path, logger) {
         super();
 
@@ -328,18 +324,14 @@ class HidppReceiverLink extends GObject.Object {
             logUnlessCancelled(this._logger, e, `refreshDevices on ${this.path} failed`);
         }
     }
-}
+});
 
 // Speaks HID++ to receivers the kernel does not drive, reachable through the udev rule in udev/
-export class HidppReceiverMonitor extends GObject.Object {
-    static [GObject.signals] = {
+export const HidppReceiverMonitor = GObject.registerClass({
+    Signals: {
         'changed': {},
-    };
-
-    static {
-        GObject.registerClass(this);
-    }
-
+    },
+}, class HidppReceiverMonitor extends GObject.Object {
     constructor(logger) {
         super();
 
@@ -404,4 +396,4 @@ export class HidppReceiverMonitor extends GObject.Object {
             link.refreshDevices();
         }
     }
-}
+});

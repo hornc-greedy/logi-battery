@@ -54,15 +54,11 @@ async function isLogitechBluezDevice(objectPath, cancellable) {
 }
 
 // UPower hides a wireless device while it is disconnected and adds it back on reconnect
-export class UPowerBatteryMonitor extends GObject.Object {
-    static [GObject.signals] = {
+export const UPowerBatteryMonitor = GObject.registerClass({
+    Signals: {
         'changed': {},
-    };
-
-    static {
-        GObject.registerClass(this);
-    }
-
+    },
+}, class UPowerBatteryMonitor extends GObject.Object {
     constructor(logger) {
         super();
 
@@ -145,4 +141,4 @@ export class UPowerBatteryMonitor extends GObject.Object {
         this._devices.delete(path);
         this.emit('changed');
     }
-}
+});

@@ -16,11 +16,8 @@ function makeStatusIcon(iconName) {
     return new St.Icon({icon_name: iconName, style_class: 'system-status-icon'});
 }
 
+const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
-    static {
-        GObject.registerClass(this);
-    }
-
     constructor(extension) {
         super(0.5, extension.metadata.name);
 
@@ -136,7 +133,7 @@ class Indicator extends PanelMenu.Button {
 
         super.destroy();
     }
-}
+});
 
 export default class LogiBatteryExtension extends Extension {
     enable() {

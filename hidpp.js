@@ -5,10 +5,10 @@ import GObject from 'gi://GObject';
 
 import {logUnlessCancelled} from './utils.js';
 
-Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async', 'read_bytes_finish');
-Gio._promisify(Gio.File.prototype, 'enumerate_children_async', 'enumerate_children_finish');
-Gio._promisify(Gio.File.prototype, 'load_contents_async', 'load_contents_finish');
-Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async', 'next_files_finish');
+Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async');
+Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
+Gio._promisify(Gio.File.prototype, 'load_contents_async');
+Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
 
 const LOGITECH_VENDOR_ID = '046D';
 

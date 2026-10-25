@@ -4,8 +4,8 @@ import GObject from 'gi://GObject';
 
 import {logUnlessCancelled} from './utils.js';
 
-Gio._promisify(Gio.DBusProxy.prototype, 'call', 'call_finish');
-Gio._promisify(Gio.File.prototype, 'query_info_async', 'query_info_finish');
+Gio._promisify(Gio.DBusProxy.prototype, 'call');
+Gio._promisify(Gio.File.prototype, 'query_info_async');
 
 const UPOWER_BUS_NAME = 'org.freedesktop.UPower';
 const UPOWER_OBJECT_PATH = '/org/freedesktop/UPower';

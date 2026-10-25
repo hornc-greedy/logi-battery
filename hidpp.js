@@ -3,12 +3,11 @@ import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-import {logUnlessCancelled} from './utils.js';
+import {isCancelled, logUnlessCancelled} from './utils.js';
 
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.File.prototype, 'load_contents_async');
-Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
 
 const LOGITECH_VENDOR_ID = '046D';
 
@@ -66,41 +65,40 @@ async function tryReadUevent(path, cancellable) {
     }
 }
 
+async function undrivenReceiverPath(name, cancellable) {
+    const devicePath = `/sys/class/hidraw/${name}/device`;
+
+    const contents = await tryReadUevent(`${devicePath}/uevent`, cancellable);
+    if (!contents)
+        return null;
+
+    const uevent = new TextDecoder().decode(contents);
+    const [, bus, vendor, product] = uevent.match(/HID_ID=([0-9A-F]{4}):0000([0-9A-F]{4}):0000([0-9A-F]{4})/);
+    const productId = parseInt(product, 16);
+    if (bus !== BUS_USB || vendor !== LOGITECH_VENDOR_ID
+        || productId < RECEIVER_PRODUCT_ID_MIN || productId > RECEIVER_PRODUCT_ID_MAX)
+        return null;
+
+    if (!uevent.includes(`DRIVER=${UNDRIVEN_RECEIVER_DRIVER}\n`))
+        return null;
+
+    // The HID++ interface has no input node, unlike the keyboard and mouse interfaces
+    if (GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
+        return null;
+
+    return `/dev/${name}`;
+}
+
 async function discoverUndrivenReceivers(cancellable) {
     const dir = Gio.File.new_for_path('/sys/class/hidraw');
     const enumerator = await dir.enumerate_children_async(
         'standard::name', Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, cancellable);
-    const paths = [];
+    const names = [];
+    for await (const info of enumerator)
+        names.push(info.get_name());
 
-    let infos;
-    while ((infos = await enumerator.next_files_async(10, GLib.PRIORITY_DEFAULT, cancellable)).length) {
-        for (const info of infos) {
-            const name = info.get_name();
-            const devicePath = `/sys/class/hidraw/${name}/device`;
-
-            const contents = await tryReadUevent(`${devicePath}/uevent`, cancellable);
-            if (!contents)
-                continue;
-
-            const uevent = new TextDecoder().decode(contents);
-            const [, bus, vendor, product] = uevent.match(/HID_ID=([0-9A-F]{4}):0000([0-9A-F]{4}):0000([0-9A-F]{4})/);
-            const productId = parseInt(product, 16);
-            if (bus !== BUS_USB || vendor !== LOGITECH_VENDOR_ID
-                || productId < RECEIVER_PRODUCT_ID_MIN || productId > RECEIVER_PRODUCT_ID_MAX)
-                continue;
-
-            if (!uevent.includes(`DRIVER=${UNDRIVEN_RECEIVER_DRIVER}\n`))
-                continue;
-
-            // The HID++ interface has no input node, unlike the keyboard and mouse interfaces
-            if (GLib.file_test(`${devicePath}/input`, GLib.FileTest.IS_DIR))
-                continue;
-
-            paths.push(`/dev/${name}`);
-        }
-    }
-
-    return paths;
+    const paths = await Promise.all(names.map(name => undrivenReceiverPath(name, cancellable)));
+    return paths.filter(path => path);
 }
 
 function tryOpenLink(path, logger) {
@@ -140,13 +138,12 @@ const HidppReceiverLink = GObject.registerClass({
         super();
 
         const ioStream = Gio.File.new_for_path(path).open_readwrite(null);
-        const fd = ioStream.get_input_stream().get_fd();
 
         this.path = path;
         this._logger = logger;
         this._ioStream = ioStream;
-        this._input = new GioUnix.InputStream({fd, close_fd: false});
-        this._output = new GioUnix.OutputStream({fd, close_fd: false});
+        this._input = new GioUnix.InputStream({fd: ioStream.get_input_stream().get_fd(), close_fd: false});
+        this._output = new GioUnix.OutputStream({fd: ioStream.get_input_stream().get_fd(), close_fd: false});
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
@@ -173,44 +170,45 @@ const HidppReceiverLink = GObject.registerClass({
     }
 
     async _readLoop() {
-        for (;;) {
-            let bytes;
-            try {
-                bytes = await this._input.read_bytes_async(32, GLib.PRIORITY_DEFAULT, this._cancellable);
-            } catch (e) {
-                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
-                    this.close();
-                    this.emit('disconnected');
-                }
-                return;
+        let bytes;
+        try {
+            bytes = await this._input.read_bytes_async(32, GLib.PRIORITY_DEFAULT, this._cancellable);
+        } catch (e) {
+            if (!isCancelled(e)) {
+                this.close();
+                this.emit('disconnected');
             }
+            return;
+        }
 
-            const data = bytes.get_data();
+        this._handleReport(bytes.get_data());
+        this._readLoop();
+    }
 
-            if (isConnectionNotification(data)) {
-                if (isLinkEstablished(data)) {
-                    this._queueRefresh(data[1]);
-                } else {
-                    this._devices.delete(data[1]);
-                    this.emit('changed');
-                }
-            }
-
-            if (isUnpairNotification(data)) {
+    _handleReport(data) {
+        if (isConnectionNotification(data)) {
+            if (isLinkEstablished(data)) {
+                this._queueRefresh(data[1]);
+            } else {
                 this._devices.delete(data[1]);
                 this.emit('changed');
             }
-
-            this._handleBatteryEvent(data);
-
-            this._waiters = this._waiters.filter(waiter => {
-                if (data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
-                    waiter.resolve(data);
-                    return false;
-                }
-                return true;
-            });
         }
+
+        if (isUnpairNotification(data)) {
+            this._devices.delete(data[1]);
+            this.emit('changed');
+        }
+
+        this._handleBatteryEvent(data);
+
+        this._waiters = this._waiters.filter(waiter => {
+            if (data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
+                waiter.resolve(data);
+                return false;
+            }
+            return true;
+        });
     }
 
     _handleBatteryEvent(data) {

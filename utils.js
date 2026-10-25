@@ -1,8 +1,12 @@
 import Gio from 'gi://Gio';
 
-// A cancelled operation is the extension being disabled, not a failure
+export function isCancelled(error) {
+    return error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED);
+}
+
+// A cancelled operation is the extension being disabled or the receiver being gone, not a failure
 export function logUnlessCancelled(logger, error, message) {
-    if (!error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+    if (!isCancelled(error))
         logger.warn(`${message}: ${error.message}`);
 }
 

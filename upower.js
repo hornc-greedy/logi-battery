@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-import { logUnlessCancelled } from './utils.js';
+import {logUnlessCancelled} from './utils.js';
 
 Gio._promisify(Gio.DBusProxy.prototype, 'call', 'call_finish');
 Gio._promisify(Gio.File.prototype, 'query_info_async', 'query_info_finish');
@@ -79,12 +79,12 @@ export class UPowerBatteryMonitor extends GObject.Object {
         if (this._upower)
             this._upower.disconnectObject(this);
 
-        this._devices.forEach(({ proxy }) => proxy.disconnectObject(this));
+        this._devices.forEach(({proxy}) => proxy.disconnectObject(this));
         this._devices.clear();
     }
 
     getDevices() {
-        return Array.from(this._devices.values(), ({ proxy, isBluetooth }) => {
+        return Array.from(this._devices.values(), ({proxy, isBluetooth}) => {
             const state = proxy.get_cached_property('State').unpack();
             return {
                 kind: UP_DEVICE_KINDS.get(proxy.get_cached_property('Type').unpack()) ?? 'other',
@@ -133,7 +133,7 @@ export class UPowerBatteryMonitor extends GObject.Object {
             return;
 
         proxy.connectObject('g-properties-changed', () => this.emit('changed'), this);
-        this._devices.set(path, { proxy, isBluetooth });
+        this._devices.set(path, {proxy, isBluetooth});
     }
 
     _removeDevice(path) {

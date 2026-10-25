@@ -3,7 +3,7 @@ import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-import { logUnlessCancelled } from './utils.js';
+import {logUnlessCancelled} from './utils.js';
 
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async', 'read_bytes_finish');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async', 'enumerate_children_finish');
@@ -149,8 +149,8 @@ class HidppReceiverLink extends GObject.Object {
         this.path = path;
         this._logger = logger;
         this._ioStream = ioStream;
-        this._input = new GioUnix.InputStream({ fd, close_fd: false });
-        this._output = new GioUnix.OutputStream({ fd, close_fd: false });
+        this._input = new GioUnix.InputStream({fd, close_fd: false});
+        this._output = new GioUnix.OutputStream({fd, close_fd: false});
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
@@ -166,14 +166,14 @@ class HidppReceiverLink extends GObject.Object {
 
         this._waiters.forEach(waiter => {
             GLib.Source.remove(waiter.timeoutId);
-            waiter.reject(new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed' }));
+            waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed'}));
         });
         this._waiters = [];
         this._devices.clear();
     }
 
     getDevices() {
-        return Array.from(this._devices.values(), ({ kind, percent, charging }) => ({ kind, percent, charging, isBluetooth: false }));
+        return Array.from(this._devices.values(), ({kind, percent, charging}) => ({kind, percent, charging, isBluetooth: false}));
     }
 
     async _readLoop() {
@@ -247,7 +247,7 @@ class HidppReceiverLink extends GObject.Object {
                 devnumber, hi: data[2], lo: data[3], reject,
                 timeoutId: GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () => {
                     this._waiters = this._waiters.filter(w => w !== waiter);
-                    reject(new Gio.IOErrorEnum({ code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out' }));
+                    reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out'}));
                 }),
                 resolve: reply => {
                     GLib.Source.remove(waiter.timeoutId);
@@ -272,7 +272,7 @@ class HidppReceiverLink extends GObject.Object {
 
     async _getBatteryStatus(devnumber, featureIndex) {
         const reply = await this._callFeature(devnumber, featureIndex, 1, [], true);
-        return { percent: reply[4], statusByte: reply[6] };
+        return {percent: reply[4], statusByte: reply[6]};
     }
 
     async _getDeviceKind(devnumber, featureIndex) {
@@ -294,13 +294,13 @@ class HidppReceiverLink extends GObject.Object {
                 return;
             }
 
-            const [nameFeatureIndex, { percent, statusByte }] = await Promise.all([
+            const [nameFeatureIndex, {percent, statusByte}] = await Promise.all([
                 this._getFeatureIndex(devnumber, FEATURE_DEVICE_NAME),
                 this._getBatteryStatus(devnumber, batteryFeatureIndex),
             ]);
             const kind = nameFeatureIndex ? await this._getDeviceKind(devnumber, nameFeatureIndex) : 'other';
 
-            this._devices.set(devnumber, { kind, batteryFeatureIndex, percent, charging: isCharging(statusByte) });
+            this._devices.set(devnumber, {kind, batteryFeatureIndex, percent, charging: isCharging(statusByte)});
         } catch (e) {
             // A refresh queued before close() finds the output stream closed
             if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CLOSED))

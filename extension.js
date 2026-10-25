@@ -2,18 +2,18 @@ import GObject from 'gi://GObject';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 
-import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
-import { UPowerBatteryMonitor } from './upower.js';
-import { HidppReceiverMonitor } from './hidpp.js';
-import { deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor } from './utils.js';
+import {UPowerBatteryMonitor} from './upower.js';
+import {HidppReceiverMonitor} from './hidpp.js';
+import {deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor} from './utils.js';
 
 function makeStatusIcon(iconName) {
-    return new St.Icon({ icon_name: iconName, style_class: 'system-status-icon' });
+    return new St.Icon({icon_name: iconName, style_class: 'system-status-icon'});
 }
 
 class Indicator extends PanelMenu.Button {
@@ -27,7 +27,7 @@ class Indicator extends PanelMenu.Button {
         this._settings = extension.getSettings();
         this._view = null;
 
-        this._box = new St.BoxLayout({ style_class: 'logi-battery-box' });
+        this._box = new St.BoxLayout({style_class: 'logi-battery-box'});
         this.add_child(this._box);
 
         this._buildMenu();
@@ -87,9 +87,9 @@ class Indicator extends PanelMenu.Button {
                 }));
             }
 
-            const row = new St.BoxLayout({ style_class: 'logi-battery-device' });
+            const row = new St.BoxLayout({style_class: 'logi-battery-device'});
 
-            const iconGroup = new St.BoxLayout({ style_class: 'logi-battery-icon-group' });
+            const iconGroup = new St.BoxLayout({style_class: 'logi-battery-icon-group'});
             iconGroup.add_child(makeStatusIcon(deviceKindIconName(device.kind)));
             if (device.isBluetooth)
                 iconGroup.add_child(makeStatusIcon('bluetooth-active-symbolic'));
@@ -117,14 +117,14 @@ class Indicator extends PanelMenu.Button {
 
     _renderLoading() {
         this._box.destroy_all_children();
-        const spinner = new Animation.Spinner(16, { animate: true });
+        const spinner = new Animation.Spinner(16, {animate: true});
         this._box.add_child(spinner);
         spinner.play();
     }
 
     _renderMessage(text) {
         this._box.destroy_all_children();
-        this._box.add_child(new St.Label({ text, y_align: Clutter.ActorAlign.CENTER }));
+        this._box.add_child(new St.Label({text, y_align: Clutter.ActorAlign.CENTER}));
     }
 
     destroy() {

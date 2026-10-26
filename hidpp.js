@@ -9,7 +9,7 @@ Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.File.prototype, 'load_contents_async');
 
-const LOGITECH_VENDOR_ID = '046D';
+const LOGITECH_VENDOR_ID = '0000046D';
 
 const BUS_USB = '0003';
 
@@ -69,7 +69,7 @@ async function undrivenReceiverPath(name, cancellable) {
         return null;
 
     const uevent = new TextDecoder().decode(contents);
-    const [, bus, vendor, product] = uevent.match(/HID_ID=([0-9A-F]{4}):0000([0-9A-F]{4}):0000([0-9A-F]{4})/);
+    const [, bus, vendor, product] = uevent.match(/HID_ID=([0-9A-F]{4}):([0-9A-F]{8}):([0-9A-F]{8})/);
     const productId = parseInt(product, 16);
     if (bus !== BUS_USB || vendor !== LOGITECH_VENDOR_ID
         || productId < RECEIVER_PRODUCT_ID_MIN || productId > RECEIVER_PRODUCT_ID_MAX)

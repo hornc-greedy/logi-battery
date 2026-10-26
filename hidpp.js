@@ -48,9 +48,7 @@ const FEATURE_UNIFIED_BATTERY = 0x1004;
 
 // Charging, charging slow and complete, as the kernel's hidpp20_unifiedbattery_map_status reads them
 const CHARGING_STATUSES = new Set([1, 2, 3]);
-const DEVICE_KIND_NAMES = [
-    'keyboard', 'remote_control', 'numpad', 'mouse', 'touchpad', 'trackball', 'presenter', 'receiver',
-];
+const DEVICE_KINDS = new Map([[0, 'keyboard'], [3, 'mouse']]);
 
 const REQUEST_TIMEOUT_SECONDS = 5;
 
@@ -268,8 +266,8 @@ const HidppReceiverLink = GObject.registerClass({
     }
 
     async _getDeviceKind(devnumber, featureIndex) {
-        const reply = await this._callFeature(devnumber, featureIndex, 2, []);
-        return DEVICE_KIND_NAMES[reply[4]] || 'other';
+        const reply = await this._callFeature(devnumber, featureIndex, 2);
+        return DEVICE_KINDS.get(reply[4]) ?? 'other';
     }
 
     // Requests to one device share request IDs, so its refreshes run one after another

@@ -46,10 +46,8 @@ const OUR_SOFTWARE_ID = 0x01;
 const FEATURE_DEVICE_NAME = 0x0005;
 const FEATURE_UNIFIED_BATTERY = 0x1004;
 
-const CHARGING_STATUSES = new Set(['RECHARGING', 'ALMOST_FULL', 'FULL', 'SLOW_RECHARGE']);
-const BATTERY_STATUS_NAMES = [
-    'DISCHARGING', 'RECHARGING', 'ALMOST_FULL', 'FULL', 'SLOW_RECHARGE', 'INVALID_BATTERY', 'THERMAL_ERROR',
-];
+// Charging, charging slow and complete, as the kernel's hidpp20_unifiedbattery_map_status reads them
+const CHARGING_STATUSES = new Set([1, 2, 3]);
 const DEVICE_KIND_NAMES = [
     'keyboard', 'remote_control', 'numpad', 'mouse', 'touchpad', 'trackball', 'presenter', 'receiver',
 ];
@@ -124,7 +122,7 @@ function isLinkEstablished(data) {
 }
 
 function isCharging(statusByte) {
-    return CHARGING_STATUSES.has(BATTERY_STATUS_NAMES[statusByte]);
+    return CHARGING_STATUSES.has(statusByte);
 }
 
 // HID++ devices push battery and status events unsolicited

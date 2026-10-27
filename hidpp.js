@@ -6,6 +6,7 @@ import GObject from 'gi://GObject';
 import {isCancelled, logUnlessCancelled} from './utils.js';
 
 Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async');
+Gio._promisify(Gio.OutputStream.prototype, 'write_bytes_async');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.File.prototype, 'load_contents_async');
 
@@ -139,7 +140,8 @@ const HidppReceiverLink = GObject.registerClass({
         this._logger = logger;
         this._ioStream = ioStream;
         this._input = new GioUnix.InputStream({fd: ioStream.get_input_stream().get_fd(), close_fd: false});
-        this._output = new GioUnix.OutputStream({fd: ioStream.get_input_stream().get_fd(), close_fd: false});
+        this._output = ioStream.get_output_stream();
+        this._lastWrite = Promise.resolve();
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
@@ -150,15 +152,13 @@ const HidppReceiverLink = GObject.registerClass({
 
     close() {
         this._cancellable.cancel();
-        this._output.close(null);
-        this._ioStream.close(null);
 
-        this._waiters.forEach(waiter => {
-            GLib.Source.remove(waiter.timeoutId);
-            waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed'}));
-        });
-        this._waiters = [];
+        this._waiters.forEach(waiter =>
+            waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed'})));
         this._devices.clear();
+
+        // A write in flight keeps the stream busy until its thread returns
+        this._lastWrite.then(() => this._ioStream.close_async(GLib.PRIORITY_DEFAULT, null, null));
     }
 
     getDevices() {
@@ -198,13 +198,8 @@ const HidppReceiverLink = GObject.registerClass({
 
         this._handleBatteryEvent(data);
 
-        this._waiters = this._waiters.filter(waiter => {
-            if (data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo) {
-                waiter.resolve(data);
-                return false;
-            }
-            return true;
-        });
+        this._waiters.filter(waiter => data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo)
+            .forEach(waiter => waiter.resolve(data));
     }
 
     _handleBatteryEvent(data) {
@@ -230,21 +225,28 @@ const HidppReceiverLink = GObject.registerClass({
         data[3] = requestId & 0xff;
         data.set(params, 4);
 
-        this._output.write_bytes(new GLib.Bytes(data), null);
-
         return new Promise((resolve, reject) => {
-            const waiter = {
-                devnumber, hi: data[2], lo: data[3], reject,
-                timeoutId: GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () => {
-                    this._waiters = this._waiters.filter(w => w !== waiter);
-                    reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out'}));
-                }),
-                resolve: reply => {
-                    GLib.Source.remove(waiter.timeoutId);
-                    resolve(reply);
-                },
+            this._cancellable.set_error_if_cancelled();
+
+            const waiter = {devnumber, hi: data[2], lo: data[3]};
+            const settle = (callback, value) => {
+                GLib.Source.remove(waiter.timeoutId);
+                this._waiters = this._waiters.filter(w => w !== waiter);
+                callback(value);
             };
+            waiter.resolve = reply => settle(resolve, reply);
+            waiter.reject = error => settle(reject, error);
+            waiter.timeoutId = GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () =>
+                waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out'})));
             this._waiters.push(waiter);
+
+            // hidraw waits for the USB transfer, so writes run in a GIO thread, one at a time as a stream requires
+            this._lastWrite = this._lastWrite
+                .then(() => this._output.write_bytes_async(new GLib.Bytes(data), GLib.PRIORITY_DEFAULT, this._cancellable))
+                .catch(error => {
+                    if (this._waiters.includes(waiter))
+                        waiter.reject(error);
+                });
         });
     }
 
@@ -292,9 +294,7 @@ const HidppReceiverLink = GObject.registerClass({
 
             this._devices.set(devnumber, {kind, batteryFeatureIndex, percent, charging: isCharging(statusByte)});
         } catch (e) {
-            // A refresh queued before close() finds the output stream closed
-            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CLOSED))
-                logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
+            logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);
         } finally {
             this.emit('changed');
@@ -333,10 +333,11 @@ export const HidppReceiverMonitor = GObject.registerClass({
         this._cancellable = new Gio.Cancellable();
         this._links = [];
 
-        // udev sets the ACL after the node appears, which arrives as an attribute change
+        // udev sets the ACL after the node appears, which arrives as an attribute change, while writes arrive as changes
         this._devMonitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
-        this._devMonitor.connectObject('changed', (_monitor, file) => {
-            if (file.get_basename().startsWith('hidraw'))
+        this._devMonitor.connectObject('changed', (_monitor, file, _otherFile, eventType) => {
+            if (eventType !== Gio.FileMonitorEvent.CHANGED && eventType !== Gio.FileMonitorEvent.CHANGES_DONE_HINT
+                && file.get_basename().startsWith('hidraw'))
                 this._connectReceivers();
         }, this);
 

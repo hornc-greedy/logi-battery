@@ -9,6 +9,7 @@ Gio._promisify(GioUnix.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Gio.OutputStream.prototype, 'write_bytes_async');
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.File.prototype, 'load_contents_async');
+Gio._promisify(Gio.File.prototype, 'open_readwrite_async');
 
 const LOGITECH_VENDOR_ID = '0000046D';
 
@@ -98,14 +99,6 @@ async function discoverUndrivenReceivers(cancellable) {
     return paths.filter(path => path);
 }
 
-function tryOpenLink(path, logger) {
-    try {
-        return new HidppReceiverLink(path, logger);
-    } catch {
-        return null;
-    }
-}
-
 function isUnpairNotification(data) {
     return data[0] === HIDPP_SHORT_MESSAGE_ID && data[2] === HIDPP_DISCONNECTION_NOTIFICATION
         && data[3] === HIDPP_PERMANENT_DISCONNECTION;
@@ -131,10 +124,23 @@ const HidppReceiverLink = GObject.registerClass({
         'disconnected': {},
     },
 }, class HidppReceiverLink extends GObject.Object {
-    constructor(path, logger) {
-        super();
+    static async open(path, logger, cancellable) {
+        const ioStream = await Gio.File.new_for_path(path).open_readwrite_async(GLib.PRIORITY_DEFAULT, cancellable);
+        const link = new HidppReceiverLink(path, ioStream, logger);
 
-        const ioStream = Gio.File.new_for_path(path).open_readwrite(null);
+        try {
+            // destroy() can run between the finished open and this continuation
+            cancellable.set_error_if_cancelled();
+        } catch (e) {
+            link.close();
+            throw e;
+        }
+
+        return link;
+    }
+
+    constructor(path, ioStream, logger) {
+        super();
 
         this.path = path;
         this._logger = logger;
@@ -332,6 +338,7 @@ export const HidppReceiverMonitor = GObject.registerClass({
         this._logger = logger;
         this._cancellable = new Gio.Cancellable();
         this._links = [];
+        this._linkPaths = new Set();
 
         // udev sets the ACL after the node appears, which arrives as an attribute change, while writes arrive as changes
         this._devMonitor = Gio.File.new_for_path('/dev').monitor_directory(Gio.FileMonitorFlags.NONE, null);
@@ -348,6 +355,7 @@ export const HidppReceiverMonitor = GObject.registerClass({
         this._cancellable.cancel();
         this._devMonitor.disconnectObject(this);
         this._devMonitor.cancel();
+        this._devMonitor = null;
 
         this._links.forEach(link => {
             link.disconnectObject(this);
@@ -369,26 +377,33 @@ export const HidppReceiverMonitor = GObject.registerClass({
             return;
         }
 
-        const knownPaths = new Set(this._links.map(link => link.path));
+        paths.filter(path => !this._linkPaths.has(path)).forEach(path => this._openLink(path));
+    }
 
-        for (const path of paths) {
-            if (knownPaths.has(path))
-                continue;
+    async _openLink(path) {
+        this._linkPaths.add(path);
 
-            const link = tryOpenLink(path, this._logger);
-            if (!link)
-                continue;
-
-            link.connectObject(
-                'changed', () => this.emit('changed'),
-                'disconnected', () => {
-                    link.disconnectObject(this);
-                    this._links = this._links.filter(l => l !== link);
-                    this.emit('changed');
-                },
-                this);
-            this._links.push(link);
-            link.refreshDevices();
+        let link;
+        try {
+            link = await HidppReceiverLink.open(path, this._logger, this._cancellable);
+        } catch (e) {
+            // The node stays root-only without the udev rule, and until udev has set its ACL
+            if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.PERMISSION_DENIED))
+                logUnlessCancelled(this._logger, e, `${path} open failed`);
+            this._linkPaths.delete(path);
+            return;
         }
+
+        link.connectObject(
+            'changed', () => this.emit('changed'),
+            'disconnected', () => {
+                link.disconnectObject(this);
+                this._links = this._links.filter(l => l !== link);
+                this._linkPaths.delete(path);
+                this.emit('changed');
+            },
+            this);
+        this._links.push(link);
+        link.refreshDevices();
     }
 });

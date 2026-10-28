@@ -43,6 +43,8 @@ async function newSystemProxy(busName, objectPath, interfaceName, cancellable) {
         g_interface_name: interfaceName,
     });
     await proxy.init_async(GLib.PRIORITY_DEFAULT, cancellable);
+    // destroy() can run between the finished init and this continuation
+    cancellable.set_error_if_cancelled();
     return proxy;
 }
 
@@ -72,8 +74,10 @@ export const UPowerBatteryMonitor = GObject.registerClass({
     destroy() {
         this._cancellable.cancel();
 
-        if (this._upower)
+        if (this._upower) {
             this._upower.disconnectObject(this);
+            this._upower = null;
+        }
 
         this._devices.forEach(({proxy}) => proxy.disconnectObject(this));
         this._devices.clear();
@@ -127,6 +131,9 @@ export const UPowerBatteryMonitor = GObject.registerClass({
             isBluetooth = true;
         else
             return;
+
+        // destroy() can run between the finished check and this continuation
+        this._cancellable.set_error_if_cancelled();
 
         proxy.connectObject('g-properties-changed', () => this.emit('changed'), this);
         this._devices.set(path, {proxy, isBluetooth});

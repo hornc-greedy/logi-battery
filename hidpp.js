@@ -58,7 +58,10 @@ async function tryReadUevent(path, cancellable) {
     try {
         const [contents] = await Gio.File.new_for_path(path).load_contents_async(cancellable);
         return contents;
-    } catch {
+    } catch (e) {
+        if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+            throw e;
+
         return null;
     }
 }

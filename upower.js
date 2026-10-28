@@ -67,6 +67,7 @@ export const UPowerBatteryMonitor = GObject.registerClass({
         this._logger = logger;
         this._cancellable = new Gio.Cancellable();
         this._devices = new Map();
+        this._pendingAdds = new Set();
 
         this._start();
     }
@@ -101,11 +102,25 @@ export const UPowerBatteryMonitor = GObject.registerClass({
             this._upower.connectObject(
                 'g-signal::DeviceAdded', (_proxy, _sender, _signal, params) => this._onDeviceAdded(params.deepUnpack()[0]),
                 'g-signal::DeviceRemoved', (_proxy, _sender, _signal, params) => this._removeDevice(params.deepUnpack()[0]),
+                'notify::g-name-owner', proxy => {
+                    if (proxy.get_name_owner())
+                        this._enumerateDevices();
+                },
                 this);
+        } catch (e) {
+            logUnlessCancelled(this._logger, e, 'UPower connection failed');
+            this.emit('changed');
+            return;
+        }
 
+        this._enumerateDevices();
+    }
+
+    async _enumerateDevices() {
+        try {
             const reply = await this._upower.call('EnumerateDevices', null, Gio.DBusCallFlags.NONE, -1, this._cancellable);
             const [paths] = reply.deepUnpack();
-            await Promise.all(paths.map(path => this._addDevice(path)));
+            await Promise.all(paths.map(path => this._onDeviceAdded(path)));
         } catch (e) {
             logUnlessCancelled(this._logger, e, 'UPower enumeration failed');
         }
@@ -122,8 +137,11 @@ export const UPowerBatteryMonitor = GObject.registerClass({
     }
 
     async _addDevice(path) {
+        this._pendingAdds.add(path);
+
         const proxy = await newSystemProxy(UPOWER_BUS_NAME, path, UPOWER_DEVICE_INTERFACE, this._cancellable);
-        const nativePath = proxy.get_cached_property('NativePath').unpack();
+        // GDBusProxy ignores a failed GetAll, the cache stays empty when the device is already gone
+        const nativePath = proxy.get_cached_property('NativePath')?.unpack() ?? '';
         let isBluetooth;
         if (nativePath.startsWith(HIDPP_BATTERY_PREFIX))
             isBluetooth = await isBluetoothSupply(nativePath, this._cancellable);
@@ -135,11 +153,30 @@ export const UPowerBatteryMonitor = GObject.registerClass({
         // destroy() can run between the finished check and this continuation
         this._cancellable.set_error_if_cancelled();
 
-        proxy.connectObject('g-properties-changed', () => this.emit('changed'), this);
+        // UPower exiting before the handler below is connected leaves an empty cache
+        if (!proxy.get_name_owner())
+            return;
+
+        // DeviceRemoved can arrive during the awaits above
+        if (!this._pendingAdds.delete(path))
+            return;
+
+        // UPower adds a known device again after a restart, or while the enumeration is still running
+        this._removeDevice(path);
+
+        // UPower exiting empties the property cache
+        proxy.connectObject('g-properties-changed', () => {
+            if (proxy.get_name_owner())
+                this.emit('changed');
+            else
+                this._removeDevice(path);
+        }, this);
         this._devices.set(path, {proxy, isBluetooth});
     }
 
     _removeDevice(path) {
+        this._pendingAdds.delete(path);
+
         const device = this._devices.get(path);
         if (!device)
             return;

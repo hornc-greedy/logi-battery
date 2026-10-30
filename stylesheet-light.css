@@ -1,0 +1,36 @@
+.logi-battery-box {
+    spacing: 6px;
+}
+
+.logi-battery-device {
+    spacing: 2px;
+}
+
+.logi-battery-device .system-status-icon {
+    padding: 0;
+}
+
+.logi-battery-full,
+.logi-battery-good {
+    color: #2ec27e;
+}
+
+.logi-battery-low {
+    color: #e5a50a;
+}
+
+.logi-battery-caution {
+    color: #e01b24;
+}
+
+/* The separator follows GNOME Shell's .quick-toggle-separator with the light style's panel foreground #222226 */
+.logi-battery-separator {
+    width: 1px;
+    margin: 6px 4px;
+    background-color: rgba(34, 34, 38, 0.25);
+}
+
+/* The overview panel stays light on dark, with GNOME Shell's system foreground #fafafb */
+#panel:overview .logi-battery-separator {
+    background-color: rgba(250, 250, 251, 0.25);
+}

@@ -31,11 +31,3 @@ export function batteryLevel(percent) {
 export function batteryLevelIconName(level, charging) {
     return `battery-${level}${charging ? '-charging' : ''}-symbolic`;
 }
-
-export function batteryLevelColor(level) {
-    switch (level) {
-    case 'caution': return '#e01b24';
-    case 'low': return '#e5a50a';
-    default: return '#2ec27e';
-    }
-}

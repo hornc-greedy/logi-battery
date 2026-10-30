@@ -10,7 +10,7 @@ import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
 import {UPowerBatteryMonitor} from './upower.js';
 import {HidppReceiverMonitor} from './hidpp.js';
-import {deviceKindIconName, batteryLevel, batteryLevelIconName, batteryLevelColor} from './utils.js';
+import {deviceKindIconName, batteryLevel, batteryLevelIconName} from './utils.js';
 
 function makeStatusIcon(iconName) {
     return new St.Icon({icon_name: iconName, style_class: 'system-status-icon'});
@@ -77,16 +77,12 @@ class Indicator extends PanelMenu.Button {
 
         devices.forEach((device, index) => {
             if (index > 0) {
-                this._box.add_child(new St.Label({
-                    text: '|',
-                    style_class: 'logi-battery-separator',
-                    y_align: Clutter.ActorAlign.CENTER,
-                }));
+                this._box.add_child(new St.Widget({style_class: 'logi-battery-separator'}));
             }
 
             const row = new St.BoxLayout({style_class: 'logi-battery-device'});
 
-            const iconGroup = new St.BoxLayout({style_class: 'logi-battery-icon-group'});
+            const iconGroup = new St.BoxLayout();
             iconGroup.add_child(makeStatusIcon(deviceKindIconName(device.kind)));
             if (device.isBluetooth)
                 iconGroup.add_child(makeStatusIcon('bluetooth-active-symbolic'));
@@ -96,7 +92,7 @@ class Indicator extends PanelMenu.Button {
 
             if (showIcon) {
                 const batteryIcon = makeStatusIcon(batteryLevelIconName(level, device.charging));
-                batteryIcon.set_style(`color: ${batteryLevelColor(level)};`);
+                batteryIcon.add_style_class_name(`logi-battery-${level}`);
                 row.add_child(batteryIcon);
             } else {
                 row.add_child(new St.Label({

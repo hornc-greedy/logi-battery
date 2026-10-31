@@ -6,7 +6,6 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import {HidppReceiverMonitor} from './hidpp.js';
 import {UPowerBatteryMonitor} from './upower.js';
@@ -90,16 +89,7 @@ class Indicator extends PanelMenu.Button {
         this._settings.connectObject('changed::display-mode', () => this._sync(), this);
         this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._sync(), this));
 
-        this._buildMenu();
-    }
-
-    _buildMenu() {
-        const showIcon = this._settings.get_string('display-mode') === 'icon';
-        this._displaySwitch = new PopupMenu.PopupSwitchMenuItem('Show battery icon', showIcon);
-        this._displaySwitch.connectObject('toggled', (item, state) => {
-            this._settings.set_string('display-mode', state ? 'icon' : 'percentage');
-        }, this);
-        this.menu.addMenuItem(this._displaySwitch);
+        this.menu.addAction(_('Preferences'), () => extension.openPreferences());
     }
 
     _sync() {
@@ -135,7 +125,6 @@ class Indicator extends PanelMenu.Button {
     destroy() {
         this._monitors.forEach(monitor => monitor.disconnectObject(this));
         this._settings.disconnectObject(this);
-        this._displaySwitch.disconnectObject(this);
         this._settings = null;
         this._monitors = null;
         this._deviceItems.clear();

@@ -23,10 +23,6 @@ Charging:
 ![Percentage mode with a charging indicator](assets/battery_charge_percentage.png)
 ![Icon mode with a charging indicator](assets/battery_charge_icon.png)
 
-Settings menu:
-
-![Panel menu with display mode switch](assets/battery_menu.png)
-
 ## Requirements
 
 - GNOME Shell 50 or 51
@@ -49,8 +45,8 @@ Settings menu:
 - Battery percentage per device in the panel, with a device-type icon
 - Charging indicator
 - Updates instantly on the device's own battery/connect events, no polling
-- Settings in the panel menu:
-  - **Show battery icon** - switch between the percentage and a battery
+- Settings in the extension preferences, opened from the indicator's menu:
+  - **Show Battery Icon** - switch between the percentage and a battery
     icon colored red / yellow / green by charge level
 
 ## Installation

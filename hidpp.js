@@ -171,7 +171,10 @@ const HidppReceiverLink = GObject.registerClass({
     }
 
     getDevices() {
-        return Array.from(this._devices.values(), ({kind, percent, charging}) => ({kind, percent, charging, isBluetooth: false}));
+        return Array.from(this._devices, ([devnumber, {kind, percent, charging}]) => ({
+            id: `${this.path}:${devnumber}`,
+            kind, percent, charging, isBluetooth: false,
+        }));
     }
 
     async _readLoop() {

@@ -85,9 +85,10 @@ export const UPowerBatteryMonitor = GObject.registerClass({
     }
 
     getDevices() {
-        return Array.from(this._devices.values(), ({proxy, isBluetooth}) => {
+        return Array.from(this._devices, ([path, {proxy, isBluetooth}]) => {
             const state = proxy.get_cached_property('State').unpack();
             return {
+                id: path,
                 kind: UP_DEVICE_KINDS.get(proxy.get_cached_property('Type').unpack()) ?? 'other',
                 percent: Math.round(proxy.get_cached_property('Percentage').unpack()),
                 charging: state === UP_DEVICE_STATE_CHARGING || state === UP_DEVICE_STATE_FULLY_CHARGED,

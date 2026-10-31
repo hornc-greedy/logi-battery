@@ -1,53 +1,96 @@
+import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St';
-import Clutter from 'gi://Clutter';
 
-import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
-import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
 
-import {UPowerBatteryMonitor} from './upower.js';
 import {HidppReceiverMonitor} from './hidpp.js';
+import {UPowerBatteryMonitor} from './upower.js';
 import {deviceKindIconName, batteryLevel, batteryLevelIconName} from './utils.js';
+
+const percentFormatter = new Intl.NumberFormat(undefined, {style: 'percent'});
 
 function makeStatusIcon(iconName) {
     return new St.Icon({icon_name: iconName, style_class: 'system-status-icon'});
 }
 
+// Long-lived per device, updated in place like the indicators in GNOME Shell's js/ui/status/
+const DeviceItem = GObject.registerClass(
+class DeviceItem extends St.BoxLayout {
+    constructor() {
+        super({style_class: 'logi-battery-device'});
+
+        this.separator = new St.Widget({style_class: 'logi-battery-separator'});
+        this.add_child(this.separator);
+
+        const iconGroup = new St.BoxLayout();
+        this._kindIcon = makeStatusIcon(null);
+        this._bluetoothIcon = makeStatusIcon('bluetooth-active-symbolic');
+        iconGroup.add_child(this._kindIcon);
+        iconGroup.add_child(this._bluetoothIcon);
+        this.add_child(iconGroup);
+
+        this._batteryIcon = makeStatusIcon(null);
+        this._percentageLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER});
+        this._chargingIcon = makeStatusIcon(null);
+        this.add_child(this._batteryIcon);
+        this.add_child(this._percentageLabel);
+        this.add_child(this._chargingIcon);
+    }
+
+    update(device, showIcon) {
+        const level = batteryLevel(device.percent);
+
+        this._kindIcon.icon_name = deviceKindIconName(device.kind);
+        this._bluetoothIcon.visible = device.isBluetooth;
+
+        this._batteryIcon.set({
+            icon_name: batteryLevelIconName(level, device.charging),
+            style_class: `system-status-icon logi-battery-${level}`,
+            visible: showIcon,
+        });
+        this._percentageLabel.set({
+            text: percentFormatter.format(device.percent / 100),
+            visible: !showIcon,
+        });
+        this._chargingIcon.set({
+            icon_name: batteryLevelIconName(level, true),
+            visible: !showIcon && device.charging,
+        });
+    }
+});
+
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
-    constructor(extension) {
+    constructor(extension, monitors) {
         super(0.5, extension.metadata.name);
 
         this._settings = extension.getSettings();
-        this._view = null;
+        this._monitors = monitors;
+        this._deviceItems = new Map();
 
         this._box = new St.BoxLayout({style_class: 'logi-battery-box'});
         this.add_child(this._box);
 
+        this._spinner = new Animation.Spinner(16, {animate: true, hideOnStop: true});
+        this._box.add_child(this._spinner);
+        this._spinner.play();
+
+        this._message = new St.Label({
+            text: _('No devices found'),
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        this._box.add_child(this._message);
+
+        this._settings.connectObject('changed::display-mode', () => this._sync(), this);
+        this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._sync(), this));
+
         this._buildMenu();
-
-        this._settings.connectObject('changed::display-mode', () => {
-            if (this._view === 'devices')
-                this._renderDevices(this._getAllDevices());
-        }, this);
-
-        this._setView('loading');
-
-        const logger = extension.getLogger();
-        this._monitors = [new UPowerBatteryMonitor(logger), new HidppReceiverMonitor(logger)];
-        this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._render(), this));
-    }
-
-    _getAllDevices() {
-        return this._monitors.flatMap(monitor => monitor.getDevices());
-    }
-
-    _render() {
-        const devices = this._getAllDevices();
-        this._setView(devices.length ? 'devices' : 'nodevices', devices);
     }
 
     _buildMenu() {
@@ -59,73 +102,43 @@ class Indicator extends PanelMenu.Button {
         this.menu.addMenuItem(this._displaySwitch);
     }
 
-    _setView(view, devices) {
-        if (this._view === view && view !== 'devices')
-            return;
-        this._view = view;
-        if (view === 'loading')
-            this._renderLoading();
-        else if (view === 'nodevices')
-            this._renderMessage('No devices found');
-        else if (view === 'devices')
-            this._renderDevices(devices);
-    }
-
-    _renderDevices(devices) {
+    _sync() {
+        const devices = this._monitors.flatMap(monitor => monitor.getDevices());
         const showIcon = this._settings.get_string('display-mode') === 'icon';
-        this._box.destroy_all_children();
+        const ids = new Set(devices.map(device => device.id));
+
+        this._deviceItems.forEach((item, id) => {
+            if (!ids.has(id)) {
+                item.destroy();
+                this._deviceItems.delete(id);
+            }
+        });
 
         devices.forEach((device, index) => {
-            if (index > 0) {
-                this._box.add_child(new St.Widget({style_class: 'logi-battery-separator'}));
+            if (!this._deviceItems.has(device.id)) {
+                const item = new DeviceItem();
+                this._deviceItems.set(device.id, item);
+                this._box.add_child(item);
             }
 
-            const row = new St.BoxLayout({style_class: 'logi-battery-device'});
-
-            const iconGroup = new St.BoxLayout();
-            iconGroup.add_child(makeStatusIcon(deviceKindIconName(device.kind)));
-            if (device.isBluetooth)
-                iconGroup.add_child(makeStatusIcon('bluetooth-active-symbolic'));
-            row.add_child(iconGroup);
-
-            const level = batteryLevel(device.percent);
-
-            if (showIcon) {
-                const batteryIcon = makeStatusIcon(batteryLevelIconName(level, device.charging));
-                batteryIcon.add_style_class_name(`logi-battery-${level}`);
-                row.add_child(batteryIcon);
-            } else {
-                row.add_child(new St.Label({
-                    text: `${device.percent}%`,
-                    y_align: Clutter.ActorAlign.CENTER,
-                }));
-
-                if (device.charging)
-                    row.add_child(makeStatusIcon(batteryLevelIconName(level, true)));
-            }
-
-            this._box.add_child(row);
+            const item = this._deviceItems.get(device.id);
+            item.update(device, showIcon);
+            item.separator.visible = index > 0;
+            // The spinner and the message come first
+            this._box.set_child_at_index(item, index + 2);
         });
-    }
 
-    _renderLoading() {
-        this._box.destroy_all_children();
-        const spinner = new Animation.Spinner(16, {animate: true});
-        this._box.add_child(spinner);
-        spinner.play();
-    }
-
-    _renderMessage(text) {
-        this._box.destroy_all_children();
-        this._box.add_child(new St.Label({text, y_align: Clutter.ActorAlign.CENTER}));
+        this._spinner.stop();
+        this._message.visible = devices.length === 0;
     }
 
     destroy() {
         this._monitors.forEach(monitor => monitor.disconnectObject(this));
         this._settings.disconnectObject(this);
         this._displaySwitch.disconnectObject(this);
-
-        this._monitors.forEach(monitor => monitor.destroy());
+        this._settings = null;
+        this._monitors = null;
+        this._deviceItems.clear();
 
         super.destroy();
     }
@@ -133,12 +146,21 @@ class Indicator extends PanelMenu.Button {
 
 export default class LogiBatteryExtension extends Extension {
     enable() {
-        this._indicator = new Indicator(this);
+        const logger = this.getLogger();
+        this._upowerMonitor = new UPowerBatteryMonitor(logger);
+        this._hidppMonitor = new HidppReceiverMonitor(logger);
+
+        this._indicator = new Indicator(this, [this._upowerMonitor, this._hidppMonitor]);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
     }
 
     disable() {
         this._indicator.destroy();
         this._indicator = null;
+
+        this._hidppMonitor.destroy();
+        this._hidppMonitor = null;
+        this._upowerMonitor.destroy();
+        this._upowerMonitor = null;
     }
 }

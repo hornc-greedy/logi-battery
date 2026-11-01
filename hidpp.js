@@ -24,6 +24,8 @@ const UNDRIVEN_RECEIVER_DRIVER = 'hid-generic';
 
 const HIDPP_SHORT_MESSAGE_ID = 0x10;
 const HIDPP_LONG_MESSAGE_ID = 0x11;
+const HIDPP_ERROR = 0x8f;
+const HIDPP20_ERROR = 0xff;
 const HIDPP_DISCONNECTION_NOTIFICATION = 0x40;
 const HIDPP_PERMANENT_DISCONNECTION = 0x02;
 const HIDPP_CONNECTION_NOTIFICATION = 0x41;
@@ -114,6 +116,11 @@ function isConnectionNotification(data) {
 // The device-info byte of a connection notification sets this bit while the link is down
 function isLinkEstablished(data) {
     return !(data[4] & HIDPP_LINK_STATUS_MASK);
+}
+
+// Error replies carry the request's two ID bytes one position later
+function isErrorReply(data) {
+    return data[2] === HIDPP_ERROR || data[2] === HIDPP20_ERROR;
 }
 
 function isCharging(statusByte) {
@@ -210,8 +217,12 @@ const HidppReceiverLink = GObject.registerClass({
 
         this._handleBatteryEvent(data);
 
-        this._waiters.filter(waiter => data[1] === waiter.devnumber && data[2] === waiter.hi && data[3] === waiter.lo)
-            .forEach(waiter => waiter.resolve(data));
+        const error = isErrorReply(data);
+        const [hi, lo] = error ? [data[3], data[4]] : [data[2], data[3]];
+        this._waiters.filter(waiter => data[1] === waiter.devnumber && hi === waiter.hi && lo === waiter.lo)
+            .forEach(waiter => error
+                ? waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.FAILED, message: `HID++ error 0x${data[5].toString(16)}`}))
+                : waiter.resolve(data));
     }
 
     _handleBatteryEvent(data) {

@@ -45,16 +45,25 @@ const ENABLE_WIRELESS_NOTIFICATIONS = 0x01;
 
 const ROOT_FEATURE_INDEX = 0x00;
 const ROOT_GET_FEATURE_FUNCTION = 0x00;
-const OUR_SOFTWARE_ID = 0x01;
+// Software ID 0 marks device events
+const MAX_SOFTWARE_ID = 0x0f;
 
 const FEATURE_DEVICE_NAME = 0x0005;
 const FEATURE_UNIFIED_BATTERY = 0x1004;
+const FEATURE_BACKLIGHT = 0x1982;
+
+// Measured on version 3, the IRoot documentation keeps later versions compatible
+const BACKLIGHT_MIN_VERSION = 3;
+const BACKLIGHT_GET_SETTINGS_FUNCTION = 0;
+const BACKLIGHT_SET_SETTINGS_FUNCTION = 1;
+const BACKLIGHT_GET_STEPS_FUNCTION = 2;
 
 // Charging, charging slow and complete, as the kernel's hidpp20_unifiedbattery_map_status reads them
 const CHARGING_STATUSES = new Set([1, 2, 3]);
 const DEVICE_KINDS = new Map([[0, 'keyboard'], [3, 'mouse']]);
 
 const REQUEST_TIMEOUT_SECONDS = 5;
+const REFRESH_DEADLINE_SECONDS = 30;
 
 async function tryReadUevent(path, cancellable) {
     try {
@@ -123,11 +132,15 @@ function isErrorReply(data) {
     return data[2] === HIDPP_ERROR || data[2] === HIDPP20_ERROR;
 }
 
+function isRetryable(error, deadline) {
+    return error.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.TIMED_OUT) && GLib.get_monotonic_time() < deadline;
+}
+
 function isCharging(statusByte) {
     return CHARGING_STATUSES.has(statusByte);
 }
 
-// HID++ devices push battery and status events unsolicited
+// HID++ devices push battery, backlight and status events unsolicited
 const HidppReceiverLink = GObject.registerClass({
     Signals: {
         'changed': {},
@@ -161,7 +174,9 @@ const HidppReceiverLink = GObject.registerClass({
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
         this._devices = new Map();
-        this._refreshes = new Map();
+        this._queues = new Map();
+        this._softwareId = 1;
+        this._requestedLevels = new Map();
 
         this._readLoop();
     }
@@ -178,9 +193,14 @@ const HidppReceiverLink = GObject.registerClass({
     }
 
     getDevices() {
-        return Array.from(this._devices, ([devnumber, {kind, name, percent, charging}]) => ({
+        return [...this._devices].sort(([a], [b]) => a - b).map(([devnumber, {kind, name, percent, charging, backlight}]) => ({
             id: `${this.path}:${devnumber}`,
             kind, name, percent, charging, isBluetooth: false,
+            backlight: backlight && {
+                level: this._requestedLevels.get(devnumber) ?? backlight.level,
+                steps: backlight.steps,
+                setLevel: level => this._setBacklightLevel(devnumber, level),
+            },
         }));
     }
 
@@ -203,7 +223,7 @@ const HidppReceiverLink = GObject.registerClass({
     _handleReport(data) {
         if (isConnectionNotification(data)) {
             if (isLinkEstablished(data)) {
-                this._queueRefresh(data[1]);
+                this._enqueue(data[1], () => this._refreshDevice(data[1]));
             } else {
                 this._devices.delete(data[1]);
                 this.emit('changed');
@@ -215,7 +235,7 @@ const HidppReceiverLink = GObject.registerClass({
             this.emit('changed');
         }
 
-        this._handleBatteryEvent(data);
+        this._handleFeatureEvent(data);
 
         const error = isErrorReply(data);
         const [hi, lo] = error ? [data[3], data[4]] : [data[2], data[3]];
@@ -225,18 +245,22 @@ const HidppReceiverLink = GObject.registerClass({
                 : waiter.resolve(data));
     }
 
-    _handleBatteryEvent(data) {
+    _handleFeatureEvent(data) {
         if (data[0] !== HIDPP_LONG_MESSAGE_ID || data[3] !== HIDPP_EVENT_FUNCTION_SW_ID)
             return;
 
         const device = this._devices.get(data[1]);
-        if (!device || device.batteryFeatureIndex !== data[2])
+        if (!device)
             return;
 
-        device.percent = data[4];
-        device.charging = isCharging(data[6]);
-
-        this.emit('changed');
+        if (device.batteryFeatureIndex === data[2]) {
+            device.percent = data[4];
+            device.charging = isCharging(data[6]);
+            this.emit('changed');
+        } else if (device.backlight?.featureIndex === data[2]) {
+            device.backlight.level = data[5];
+            this.emit('changed');
+        }
     }
 
     _request(devnumber, requestId, params = [], long = false) {
@@ -275,19 +299,24 @@ const HidppReceiverLink = GObject.registerClass({
 
     // Feature index and function number pack into the request ID
     _callFeature(devnumber, featureIndex, func, params = [], long = false) {
-        const requestId = (featureIndex << 8) | (func << 4) | OUR_SOFTWARE_ID;
+        const requestId = (featureIndex << 8) | (func << 4) | this._softwareId;
         return this._request(devnumber, requestId, params, long);
     }
 
-    async _getFeatureIndex(devnumber, featureId) {
+    // An index of 0 means the device lacks the feature
+    async _getFeature(devnumber, featureId) {
         const params = [(featureId >> 8) & 0xff, featureId & 0xff];
         const reply = await this._callFeature(devnumber, ROOT_FEATURE_INDEX, ROOT_GET_FEATURE_FUNCTION, params);
-        return reply[4];
+        return {index: reply[4], version: reply[6]};
     }
 
     async _getBatteryStatus(devnumber, featureIndex) {
         const reply = await this._callFeature(devnumber, featureIndex, 1, [], true);
         return {percent: reply[4], statusByte: reply[6]};
+    }
+
+    _deviceLabel(devnumber) {
+        return `${this.path} devnumber 0x${devnumber.toString(16)}`;
     }
 
     // The name arrives in chunks of the reply's parameter length, as the kernel's hidpp_get_device_name reads it
@@ -310,34 +339,106 @@ const HidppReceiverLink = GObject.registerClass({
         return DEVICE_KINDS.get(reply[4]) ?? 'other';
     }
 
-    // Requests to one device share request IDs, so its refreshes run one after another
-    _queueRefresh(devnumber) {
-        const previous = this._refreshes.get(devnumber) ?? Promise.resolve();
-        this._refreshes.set(devnumber, previous.then(() => this._refreshDevice(devnumber)));
+    async _getBacklight(devnumber) {
+        const {index, version} = await this._getFeature(devnumber, FEATURE_BACKLIGHT);
+        if (!index || version < BACKLIGHT_MIN_VERSION)
+            return null;
+
+        const steps = await this._callFeature(devnumber, index, BACKLIGHT_GET_STEPS_FUNCTION);
+        // The count includes level 0, so a single value leaves no level to choose
+        if (steps[4] < 2)
+            return null;
+
+        const settings = await this._callFeature(devnumber, index, BACKLIGHT_GET_SETTINGS_FUNCTION);
+        return {featureIndex: index, steps: steps[4], level: settings[9]};
     }
 
-    async _refreshDevice(devnumber) {
+    // Requests to one device share request IDs, so its tasks run one after another
+    _enqueue(devnumber, task) {
+        const previous = this._queues.get(devnumber) ?? Promise.resolve();
+        this._queues.set(devnumber, previous.then(task));
+    }
+
+    // An awake device can miss the timeout and sends no notification afterwards, so a timeout tries again until the deadline
+    async _refreshDevice(devnumber, deadline = GLib.get_monotonic_time() + REFRESH_DEADLINE_SECONDS * GLib.USEC_PER_SEC) {
         try {
-            const batteryFeatureIndex = await this._getFeatureIndex(devnumber, FEATURE_UNIFIED_BATTERY);
+            const {index: batteryFeatureIndex} = await this._getFeature(devnumber, FEATURE_UNIFIED_BATTERY);
             if (!batteryFeatureIndex) {
                 this._devices.delete(devnumber);
                 return;
             }
 
-            const [nameFeatureIndex, {percent, statusByte}] = await Promise.all([
-                this._getFeatureIndex(devnumber, FEATURE_DEVICE_NAME),
+            const [{index: nameFeatureIndex}, {percent, statusByte}] = await Promise.all([
+                this._getFeature(devnumber, FEATURE_DEVICE_NAME),
                 this._getBatteryStatus(devnumber, batteryFeatureIndex),
             ]);
             const kind = nameFeatureIndex ? await this._getDeviceKind(devnumber, nameFeatureIndex) : 'other';
             const name = nameFeatureIndex ? await this._getDeviceName(devnumber, nameFeatureIndex) : null;
+            // A keyboard whose backlight does not answer still shows its battery
+            const backlight = await this._getBacklight(devnumber).catch(e => {
+                if (isRetryable(e, deadline))
+                    throw e;
 
-            this._devices.set(devnumber, {kind, name, batteryFeatureIndex, percent, charging: isCharging(statusByte)});
+                logUnlessCancelled(this._logger, e, `${this._deviceLabel(devnumber)} backlight unreadable`);
+                return null;
+            });
+
+            this._devices.set(devnumber, {kind, name, batteryFeatureIndex, percent, charging: isCharging(statusByte), backlight});
         } catch (e) {
-            logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
+            if (isRetryable(e, deadline)) {
+                // A reply arriving after its timeout must not answer the next attempt
+                this._softwareId = this._softwareId % MAX_SOFTWARE_ID + 1;
+                this._enqueue(devnumber, () => this._refreshDevice(devnumber, deadline));
+                return;
+            }
+
+            logUnlessCancelled(this._logger, e, `${this._deviceLabel(devnumber)} unresponsive`);
             this._devices.delete(devnumber);
         } finally {
             this.emit('changed');
         }
+    }
+
+    // Coalesces drags into one write of the latest level, and like a D-Bus property emits changed once written
+    _setBacklightLevel(devnumber, level) {
+        const {backlight} = this._devices.get(devnumber);
+        if (level === (this._requestedLevels.get(devnumber) ?? backlight.level))
+            return;
+
+        const queued = this._requestedLevels.has(devnumber);
+        this._requestedLevels.set(devnumber, level);
+        if (!queued)
+            this._enqueue(devnumber, () => this._writeBacklight(devnumber));
+    }
+
+    async _writeBacklight(devnumber) {
+        const level = this._requestedLevels.get(devnumber);
+
+        // Uses the entry current at run time, a disconnect drops it
+        const backlight = this._devices.get(devnumber)?.backlight;
+        if (!backlight) {
+            this._requestedLevels.delete(devnumber);
+            return;
+        }
+
+        try {
+            // Read-modify-write of the settings, with 0xff in place of the supported and effects bytes. A cleared enabled byte keeps the light off at any level
+            const settings = await this._callFeature(devnumber, backlight.featureIndex, BACKLIGHT_GET_SETTINGS_FUNCTION);
+            const params = [level ? 1 : settings[4], settings[5], 0xff, level, ...settings.slice(10, 16)];
+            await this._callFeature(devnumber, backlight.featureIndex, BACKLIGHT_SET_SETTINGS_FUNCTION, params, true);
+        } catch (e) {
+            this._requestedLevels.delete(devnumber);
+            logUnlessCancelled(this._logger, e, `${this._deviceLabel(devnumber)} backlight write failed`);
+            this.emit('changed');
+            return;
+        }
+
+        backlight.level = level;
+        if (this._requestedLevels.get(devnumber) === level)
+            this._requestedLevels.delete(devnumber);
+        else
+            this._enqueue(devnumber, () => this._writeBacklight(devnumber));
+        this.emit('changed');
     }
 
     // Sets one flag and keeps the others, as the kernel's hidpp10_set_register does

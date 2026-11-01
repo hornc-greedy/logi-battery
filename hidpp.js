@@ -171,9 +171,9 @@ const HidppReceiverLink = GObject.registerClass({
     }
 
     getDevices() {
-        return Array.from(this._devices, ([devnumber, {kind, percent, charging}]) => ({
+        return Array.from(this._devices, ([devnumber, {kind, name, percent, charging}]) => ({
             id: `${this.path}:${devnumber}`,
-            kind, percent, charging, isBluetooth: false,
+            kind, name, percent, charging, isBluetooth: false,
         }));
     }
 
@@ -279,6 +279,21 @@ const HidppReceiverLink = GObject.registerClass({
         return {percent: reply[4], statusByte: reply[6]};
     }
 
+    // The name arrives in chunks of the reply's parameter length, as the kernel's hidpp_get_device_name reads it
+    async _getDeviceName(devnumber, featureIndex) {
+        const length = (await this._callFeature(devnumber, featureIndex, 0))[4];
+        const name = await this._readDeviceNameChunks(devnumber, featureIndex, length, []);
+        return new TextDecoder().decode(new Uint8Array(name));
+    }
+
+    async _readDeviceNameChunks(devnumber, featureIndex, length, name) {
+        if (name.length >= length)
+            return name;
+
+        const reply = await this._callFeature(devnumber, featureIndex, 1, [name.length]);
+        return this._readDeviceNameChunks(devnumber, featureIndex, length, [...name, ...reply.slice(4, 4 + length - name.length)]);
+    }
+
     async _getDeviceKind(devnumber, featureIndex) {
         const reply = await this._callFeature(devnumber, featureIndex, 2);
         return DEVICE_KINDS.get(reply[4]) ?? 'other';
@@ -303,8 +318,9 @@ const HidppReceiverLink = GObject.registerClass({
                 this._getBatteryStatus(devnumber, batteryFeatureIndex),
             ]);
             const kind = nameFeatureIndex ? await this._getDeviceKind(devnumber, nameFeatureIndex) : 'other';
+            const name = nameFeatureIndex ? await this._getDeviceName(devnumber, nameFeatureIndex) : null;
 
-            this._devices.set(devnumber, {kind, batteryFeatureIndex, percent, charging: isCharging(statusByte)});
+            this._devices.set(devnumber, {kind, name, batteryFeatureIndex, percent, charging: isCharging(statusByte)});
         } catch (e) {
             logUnlessCancelled(this._logger, e, `${this.path} devnumber 0x${devnumber.toString(16)} unresponsive`);
             this._devices.delete(devnumber);

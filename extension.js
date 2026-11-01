@@ -4,12 +4,13 @@ import St from 'gi://St';
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Animation from 'resource:///org/gnome/shell/ui/animation.js';
+import {BarLevel} from 'resource:///org/gnome/shell/ui/barLevel.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 
 import {HidppReceiverMonitor} from './hidpp.js';
 import {UPowerBatteryMonitor} from './upower.js';
-import {deviceKindIconName, batteryLevel, batteryLevelIconName} from './utils.js';
+import {deviceKindIconName, batteryLevel, batteryLevelIconName, backlightFraction, backlightIconName} from './utils.js';
 
 const percentFormatter = new Intl.NumberFormat(undefined, {style: 'percent'});
 
@@ -39,9 +40,20 @@ class DeviceItem extends St.BoxLayout {
         this.add_child(this._batteryIcon);
         this.add_child(this._percentageLabel);
         this.add_child(this._chargingIcon);
+
+        this._backlightIcon = makeStatusIcon(null);
+        this._backlightLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER});
+        this._backlightBar = new BarLevel({
+            style_class: 'logi-battery-backlight-bar',
+            accessible_name: _('Keyboard Brightness'),
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this.add_child(this._backlightIcon);
+        this.add_child(this._backlightLabel);
+        this.add_child(this._backlightBar);
     }
 
-    update(device, showIcon) {
+    update(device, showIcon, backlightDisplayMode) {
         const level = batteryLevel(device.percent);
 
         this._kindIcon.icon_name = deviceKindIconName(device.kind);
@@ -60,6 +72,24 @@ class DeviceItem extends St.BoxLayout {
             icon_name: batteryLevelIconName(level, true),
             visible: !showIcon && device.charging,
         });
+
+        const {backlight} = device;
+        const showBacklight = Boolean(backlight && backlightDisplayMode);
+        const backlightOn = showBacklight && backlight.level > 0;
+        this._backlightIcon.visible = showBacklight;
+        // Off and on need only the icon
+        const showLevel = backlightOn && backlight.steps > 2;
+        this._backlightLabel.visible = showLevel && backlightDisplayMode !== 'bar';
+        this._backlightBar.visible = showLevel && backlightDisplayMode === 'bar';
+        if (!showBacklight)
+            return;
+
+        const fraction = backlightFraction(backlight);
+        this._backlightIcon.icon_name = backlightIconName(backlight);
+        this._backlightLabel.text = backlightDisplayMode === 'level'
+            ? `${backlight.level}`
+            : percentFormatter.format(fraction);
+        this._backlightBar.value = fraction;
     }
 });
 
@@ -86,7 +116,11 @@ class Indicator extends PanelMenu.Button {
         });
         this._box.add_child(this._message);
 
-        this._settings.connectObject('changed::display-mode', () => this._sync(), this);
+        this._settings.connectObject(
+            'changed::display-mode', () => this._sync(),
+            'changed::show-backlight', () => this._sync(),
+            'changed::backlight-display-mode', () => this._sync(),
+            this);
         this._monitors.forEach(monitor => monitor.connectObject('changed', () => this._sync(), this));
 
         this.menu.addAction(_('Preferences'), () => extension.openPreferences());
@@ -95,6 +129,9 @@ class Indicator extends PanelMenu.Button {
     _sync() {
         const devices = this._monitors.flatMap(monitor => monitor.getDevices());
         const showIcon = this._settings.get_string('display-mode') === 'icon';
+        const backlightDisplayMode = this._settings.get_boolean('show-backlight')
+            ? this._settings.get_string('backlight-display-mode')
+            : null;
         const ids = new Set(devices.map(device => device.id));
 
         this._deviceItems.forEach((item, id) => {
@@ -112,7 +149,7 @@ class Indicator extends PanelMenu.Button {
             }
 
             const item = this._deviceItems.get(device.id);
-            item.update(device, showIcon);
+            item.update(device, showIcon, backlightDisplayMode);
             item.separator.visible = index > 0;
             // The spinner and the message come first
             this._box.set_child_at_index(item, index + 2);

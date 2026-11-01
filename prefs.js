@@ -1,6 +1,11 @@
 import Adw from 'gi://Adw';
+import Gio from 'gi://Gio';
+import GObject from 'gi://GObject';
+import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+
+const BACKLIGHT_DISPLAY_MODES = ['percentage', 'level', 'bar'];
 
 export default class LogiBatteryPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -23,7 +28,7 @@ export default class LogiBatteryPreferences extends ExtensionPreferences {
         });
         batteryGroup.add(batteryIconRow);
 
-        // display-mode holds a string, which Gio.Settings.bind cannot map to this row
+        // display-mode and backlight-display-mode hold strings, which Gio.Settings.bind cannot map to these rows
         const syncBatteryIconRow = () => {
             batteryIconRow.active = window._settings.get_string('display-mode') === 'icon';
         };
@@ -32,8 +37,37 @@ export default class LogiBatteryPreferences extends ExtensionPreferences {
         batteryIconRow.connect('notify::active', () =>
             window._settings.set_string('display-mode', batteryIconRow.active ? 'icon' : 'percentage'));
 
+        const backlightGroup = new Adw.PreferencesGroup({
+            title: _('Keyboard Brightness'),
+            description: _('Available for keyboards connected through a Bolt receiver, which needs the udev rule from the repository'),
+        });
+        page.add(backlightGroup);
+
+        const showBacklightRow = new Adw.SwitchRow({
+            title: _('Show in Top Bar'),
+            subtitle: _('Show the keyboard brightness next to the keyboard battery'),
+        });
+        backlightGroup.add(showBacklightRow);
+        window._settings.bind('show-backlight', showBacklightRow, 'active', Gio.SettingsBindFlags.DEFAULT);
+
+        const displayModeRow = new Adw.ComboRow({
+            title: _('Display'),
+            model: Gtk.StringList.new([_('Percentage'), _('Level'), _('Bar')]),
+        });
+        backlightGroup.add(displayModeRow);
+        showBacklightRow.bind_property('active', displayModeRow, 'sensitive', GObject.BindingFlags.SYNC_CREATE);
+
+        const syncDisplayModeRow = () => {
+            displayModeRow.selected = BACKLIGHT_DISPLAY_MODES.indexOf(window._settings.get_string('backlight-display-mode'));
+        };
+        const backlightDisplayModeChangedId = window._settings.connect('changed::backlight-display-mode', syncDisplayModeRow);
+        syncDisplayModeRow();
+        displayModeRow.connect('notify::selected', () =>
+            window._settings.set_string('backlight-display-mode', BACKLIGHT_DISPLAY_MODES[displayModeRow.selected]));
+
         window.connect('close-request', () => {
             window._settings.disconnect(displayModeChangedId);
+            window._settings.disconnect(backlightDisplayModeChangedId);
         });
     }
 }

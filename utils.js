@@ -31,3 +31,11 @@ export function batteryLevel(percent) {
 export function batteryLevelIconName(level, charging) {
     return `battery-${level}${charging ? '-charging' : ''}-symbolic`;
 }
+
+export function backlightFraction({level, steps}) {
+    return level / (steps - 1);
+}
+
+export function backlightIconName({level}) {
+    return level ? 'keyboard-brightness-symbolic' : 'keyboard-brightness-off-symbolic';
+}

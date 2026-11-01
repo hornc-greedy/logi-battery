@@ -23,14 +23,27 @@
     color: #e01b24;
 }
 
-/* The separator follows GNOME Shell's .quick-toggle-separator with the light style's panel foreground #222226 */
+/* Separator and bar follow GNOME Shell's .quick-toggle-separator and .slider with the light style's panel foreground #222226 */
 .logi-battery-separator {
     width: 1px;
     margin: 6px 4px;
     background-color: rgba(34, 34, 38, 0.25);
 }
 
+.logi-battery-backlight-bar {
+    width: 32px;
+    -barlevel-height: 4px;
+    -barlevel-background-color: rgba(34, 34, 38, 0.1);
+    -barlevel-active-background-color: -st-accent-color;
+    -barlevel-overdrive-color: #e01b24;
+    -barlevel-overdrive-separator-width: 1px;
+}
+
 /* The overview panel stays light on dark, with GNOME Shell's system foreground #fafafb */
 #panel:overview .logi-battery-separator {
     background-color: rgba(250, 250, 251, 0.25);
+}
+
+#panel:overview .logi-battery-backlight-bar {
+    -barlevel-background-color: rgba(250, 250, 251, 0.1);
 }

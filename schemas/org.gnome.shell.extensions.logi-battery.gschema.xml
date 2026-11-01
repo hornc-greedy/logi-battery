@@ -6,5 +6,20 @@
       <summary>Display mode</summary>
       <description>Either "percentage" (show the number) or "icon" (show a battery icon colored red/yellow/green by charge level).</description>
     </key>
+    <key name="show-backlight" type="b">
+      <default>true</default>
+      <summary>Show keyboard brightness</summary>
+      <description>Whether the top bar shows the keyboard brightness next to the keyboard's battery.</description>
+    </key>
+    <key name="backlight-display-mode" type="s">
+      <choices>
+        <choice value="percentage"/>
+        <choice value="level"/>
+        <choice value="bar"/>
+      </choices>
+      <default>"percentage"</default>
+      <summary>Keyboard brightness display mode</summary>
+      <description>Either "percentage" (show the number), "level" (show the current level) or "bar" (show a level bar).</description>
+    </key>
   </schema>
 </schemalist>

@@ -8,6 +8,7 @@ import {BarLevel} from 'resource:///org/gnome/shell/ui/barLevel.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 
+import * as BacklightStatus from './backlight.js';
 import {HidppReceiverMonitor} from './hidpp.js';
 import {UPowerBatteryMonitor} from './upower.js';
 import {deviceKindIconName, batteryLevel, batteryLevelIconName, backlightFraction, backlightIconName} from './utils.js';
@@ -178,9 +179,14 @@ export default class LogiBatteryExtension extends Extension {
 
         this._indicator = new Indicator(this, [this._upowerMonitor, this._hidppMonitor]);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
+
+        this._backlightIndicator = new BacklightStatus.Indicator(this, this._hidppMonitor);
+        Main.panel.statusArea.quickSettings.addExternalIndicator(this._backlightIndicator);
     }
 
     disable() {
+        this._backlightIndicator.destroy();
+        this._backlightIndicator = null;
         this._indicator.destroy();
         this._indicator = null;
 

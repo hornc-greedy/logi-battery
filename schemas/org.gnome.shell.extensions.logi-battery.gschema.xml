@@ -21,5 +21,11 @@
       <summary>Keyboard brightness display mode</summary>
       <description>Either "percentage" (show the number), "level" (show the current level) or "bar" (show a level bar).</description>
     </key>
+    <key name="last-backlight-brightness" type="i">
+      <range min="1" max="100"/>
+      <default>100</default>
+      <summary>Last keyboard brightness</summary>
+      <description>The brightness in percent that turning the keyboard backlight back on restores.</description>
+    </key>
   </schema>
 </schemalist>

@@ -7,6 +7,8 @@ A GNOME Shell extension that shows battery percentage and charging status in
 the top bar for input devices such as the Logitech MX Master and MX Keys
 
 - Shows battery percentage and charging status per device in the top bar
+- Keyboard brightness tile in the quick settings for a keyboard on a Bolt
+  receiver
 - Works over a Unifying/Bolt receiver or direct Bluetooth pairing
 - No companion app required
 
@@ -44,10 +46,17 @@ Charging:
 
 - Battery percentage per device in the panel, with a device-type icon
 - Charging indicator
+- Keyboard brightness next to the keyboard's battery, as a percentage, as
+  the current level, or as a level bar
+- Keyboard tile in the quick settings with the keyboard's name and a
+  brightness slider, as GNOME Shell shows for laptop keyboards, for
+  keyboards with HID++ brightness control on a Bolt receiver
 - Updates instantly on the device's own battery/connect events, no polling
 - Settings in the extension preferences, opened from the indicator's menu:
   - **Show Battery Icon** - switch between the percentage and a battery
     icon colored red / yellow / green by charge level
+  - **Keyboard Brightness** - show it in the top bar or not, and as a
+    percentage, a level or a level bar
 
 ## Installation
 
@@ -67,10 +76,28 @@ Log out and back in (Wayland)
 ### Bolt receiver
 
 The extension reads the receiver's HID++ interface directly and needs a
-udev rule for access. Install it once from the repository:
+udev rule for access. Install it once, either by pasting it into a terminal:
 
 ```sh
-sudo cp udev/70-logi-battery-bolt.rules /etc/udev/rules.d/
+sudo tee /etc/udev/rules.d/70-logi-battery-bolt.rules > /dev/null << 'EOF'
+# Gives the logged-in user the HID++ interface of a Logitech Bolt receiver,
+# which the kernel's hid-logitech-dj does not drive.
+# The keyboard and mouse interfaces stay root-only.
+SUBSYSTEM=="hidraw", ACTION!="remove", ATTRS{idVendor}=="046d", ATTRS{idProduct}=="c548", ENV{LOGI_BATTERY_BOLT}="1"
+ENV{LOGI_BATTERY_BOLT}=="1", ATTRS{bInterfaceNumber}=="02", TAG+="uaccess"
+EOF
+```
+
+or by copying it from the repository:
+
+```sh
+git clone https://github.com/hornc-greedy/logi-battery.git
+sudo cp logi-battery/udev/70-logi-battery-bolt.rules /etc/udev/rules.d/
+```
+
+Then load it:
+
+```sh
 sudo udevadm control --reload
 sudo udevadm trigger --subsystem-match=hidraw
 ```

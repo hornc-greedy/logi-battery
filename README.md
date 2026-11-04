@@ -12,18 +12,28 @@ the top bar for input devices such as the Logitech MX Master and MX Keys
 - Works over a Unifying/Bolt receiver or direct Bluetooth pairing
 - No companion app required
 
-Percentage mode:
+Percentage mode, with the keyboard brightness as a level bar or as the current level:
 
-![Panel showing mouse and keyboard battery percentages](assets/battery_percentage.png)
+![Panel showing battery percentages with the keyboard brightness as a level bar](assets/battery_panel_percentage_bar.png)
+![Panel showing battery percentages with the keyboard brightness as the current level](assets/battery_panel_percentage_level.png)
 
 Icon mode (colored by charge level):
 
-![Panel showing mouse and keyboard battery as colored icons](assets/battery_icon.png)
+![Panel showing battery icons with the keyboard brightness as a level bar](assets/battery_panel_icons_bar.png)
 
 Charging:
 
-![Percentage mode with a charging indicator](assets/battery_charge_percentage.png)
-![Icon mode with a charging indicator](assets/battery_charge_icon.png)
+![Percentage mode with the mouse charging](assets/battery_panel_mouse_percentage_charging.png)
+![Icon mode with the mouse charging](assets/battery_panel_mouse_icon_charging.png)
+
+Keyboard tile in the quick settings:
+
+![Quick settings with the keyboard tile showing the keyboard's name](assets/battery_keyboard_tile_close.png)
+![Quick settings with the keyboard tile's brightness slider open](assets/battery_keyboard_tile_open.png)
+
+Extension preferences:
+
+![Preferences with the battery icon switch and the keyboard brightness display options](assets/battery_prefs.png)
 
 ## Requirements
 

@@ -155,7 +155,7 @@ const HidppReceiverLink = GObject.registerClass({
             // destroy() can run between the finished open and this continuation
             cancellable.set_error_if_cancelled();
         } catch (e) {
-            link.close();
+            link.destroy();
             throw e;
         }
 
@@ -173,6 +173,7 @@ const HidppReceiverLink = GObject.registerClass({
         this._lastWrite = Promise.resolve();
         this._cancellable = new Gio.Cancellable();
         this._waiters = [];
+        this._timeoutId = null;
         this._devices = new Map();
         this._queues = new Map();
         this._softwareId = 1;
@@ -181,10 +182,13 @@ const HidppReceiverLink = GObject.registerClass({
         this._readLoop();
     }
 
-    close() {
+    destroy() {
         this._cancellable.cancel();
 
-        this._waiters.forEach(waiter =>
+        const waiters = this._waiters;
+        this._waiters = [];
+        this._removeTimeout();
+        waiters.forEach(waiter =>
             waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.CANCELLED, message: 'HID++ link closed'})));
         this._devices.clear();
 
@@ -210,7 +214,7 @@ const HidppReceiverLink = GObject.registerClass({
             bytes = await this._input.read_bytes_async(32, GLib.PRIORITY_DEFAULT, this._cancellable);
         } catch (e) {
             if (!isCancelled(e)) {
-                this.close();
+                this.destroy();
                 this.emit('disconnected');
             }
             return;
@@ -275,17 +279,19 @@ const HidppReceiverLink = GObject.registerClass({
         return new Promise((resolve, reject) => {
             this._cancellable.set_error_if_cancelled();
 
-            const waiter = {devnumber, hi: data[2], lo: data[3]};
+            const waiter = {
+                devnumber, hi: data[2], lo: data[3],
+                deadline: GLib.get_monotonic_time() + REQUEST_TIMEOUT_SECONDS * GLib.USEC_PER_SEC,
+            };
             const settle = (callback, value) => {
-                GLib.Source.remove(waiter.timeoutId);
                 this._waiters = this._waiters.filter(w => w !== waiter);
+                this._syncTimeout();
                 callback(value);
             };
             waiter.resolve = reply => settle(resolve, reply);
             waiter.reject = error => settle(reject, error);
-            waiter.timeoutId = GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, REQUEST_TIMEOUT_SECONDS, () =>
-                waiter.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out'})));
             this._waiters.push(waiter);
+            this._syncTimeout();
 
             // hidraw waits for the USB transfer, so writes run in a GIO thread, one at a time as a stream requires
             this._lastWrite = this._lastWrite
@@ -294,6 +300,29 @@ const HidppReceiverLink = GObject.registerClass({
                     if (this._waiters.includes(waiter))
                         waiter.reject(error);
                 });
+        });
+    }
+
+    _removeTimeout() {
+        if (this._timeoutId) {
+            GLib.Source.remove(this._timeoutId);
+            this._timeoutId = null;
+        }
+    }
+
+    // One timeout runs for the oldest waiter, whose deadline comes first
+    _syncTimeout() {
+        this._removeTimeout();
+
+        const [oldest] = this._waiters;
+        if (!oldest)
+            return;
+
+        // A late timeout leaves the next waiter past its deadline
+        const seconds = Math.max(0, Math.ceil((oldest.deadline - GLib.get_monotonic_time()) / GLib.USEC_PER_SEC));
+        this._timeoutId = GLib.timeout_add_seconds_once(GLib.PRIORITY_DEFAULT, seconds, () => {
+            this._timeoutId = null;
+            oldest.reject(new Gio.IOErrorEnum({code: Gio.IOErrorEnum.TIMED_OUT, message: 'HID++ request timed out'}));
         });
     }
 
@@ -493,7 +522,7 @@ export const HidppReceiverMonitor = GObject.registerClass({
 
         this._links.forEach(link => {
             link.disconnectObject(this);
-            link.close();
+            link.destroy();
         });
         this._links = [];
     }

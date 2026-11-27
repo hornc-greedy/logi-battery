@@ -110,12 +110,9 @@ class Indicator extends PanelMenu.Button {
         this._box.add_child(this._spinner);
         this._spinner.play();
 
-        this._message = new St.Label({
-            text: _('No devices found'),
-            y_align: Clutter.ActorAlign.CENTER,
-            visible: false,
-        });
-        this._box.add_child(this._message);
+        this._noDevicesIcon = makeStatusIcon('battery-missing-symbolic');
+        this._noDevicesIcon.visible = false;
+        this._box.add_child(this._noDevicesIcon);
 
         this._settings.connectObject(
             'changed::display-mode', () => this._sync(),
@@ -152,12 +149,12 @@ class Indicator extends PanelMenu.Button {
             const item = this._deviceItems.get(device.id);
             item.update(device, showIcon, backlightDisplayMode);
             item.separator.visible = index > 0;
-            // The spinner and the message come first
+            // The spinner and the icon for no devices come first
             this._box.set_child_at_index(item, index + 2);
         });
 
         this._spinner.stop();
-        this._message.visible = devices.length === 0;
+        this._noDevicesIcon.visible = devices.length === 0;
     }
 
     destroy() {

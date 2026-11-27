@@ -2,6 +2,10 @@
     spacing: 6px;
 }
 
+.logi-battery-box > .system-status-icon {
+    padding: 0;
+}
+
 .logi-battery-device {
     spacing: 2px;
 }

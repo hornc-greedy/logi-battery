@@ -46,7 +46,6 @@ class DeviceItem extends St.BoxLayout {
         this._backlightLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER});
         this._backlightBar = new BarLevel({
             style_class: 'logi-battery-backlight-bar',
-            accessible_name: _('Keyboard Brightness'),
             y_align: Clutter.ActorAlign.CENTER,
         });
         this.add_child(this._backlightIcon);
